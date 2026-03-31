@@ -289,13 +289,14 @@ class ConfirmWriteScreen(ModalScreen[bool]):
         hex_str = " ".join(f"{b:02X}" for b in self._pending.data)
         with Vertical(id="confirm-dialog"):
             yield Label("⚠  Confirm Write to PLC", id="confirm-title")
-            yield Label(self._pending.description, id="confirm-detail")
+            yield Label(self._pending.description, id="confirm-detail", markup=False)
             yield Label(
                 f"{self._pending.target_label} offset {self._pending.offset}: [{hex_str}] ({len(self._pending.data)} bytes)",
                 id="confirm-bytes",
+                markup=False,
             )
             if self._pending.detail:
-                yield Label(self._pending.detail, id="confirm-extra")
+                yield Label(self._pending.detail, id="confirm-extra", markup=False)
             yield Label("Press Y to confirm write · N or Escape to cancel", id="confirm-hint")
 
     def action_confirm(self) -> None:
