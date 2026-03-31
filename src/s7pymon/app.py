@@ -3,14 +3,14 @@
 A Textual-based TUI application inspired by Sharp7.Monitor that provides:
 - Live hex dump of DB contents with auto-refresh
 - Parsed variable table with change highlighting
-- Inline editing of variable values
-- Command bar for raw byte writes
-- Bit toggling with spacebar
+- Inline editing of variable values with write confirmation
+- Command bar for raw byte writes with confirmation
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Union
 
 from rich.text import Text
@@ -24,6 +24,18 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, St
 
 from .connection import ConnectionConfig, ConnectionState, S7Connection
 from .variable import S7Type, S7Variable, compute_read_range, extract_value
+
+
+@dataclass
+class PendingWrite:
+    """Describes a write operation awaiting confirmation."""
+
+    description: str  # Human-readable summary
+    db: int
+    offset: int
+    data: bytearray
+    # For display purposes
+    detail: str = ""
 
 
 def format_hex_dump(data: bytearray, start_offset: int = 0, bytes_per_line: int = 16) -> str:
@@ -201,6 +213,69 @@ class CommandBarScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class ConfirmWriteScreen(ModalScreen[bool]):
+    """Confirmation dialog shown before any write to the PLC."""
+
+    BINDINGS = [
+        Binding("y", "confirm", "Yes, write"),
+        Binding("n", "cancel", "No, cancel"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    ConfirmWriteScreen {
+        align: center middle;
+    }
+    #confirm-dialog {
+        width: 70;
+        height: auto;
+        max-height: 14;
+        border: thick $error;
+        background: $surface;
+        padding: 1 2;
+    }
+    #confirm-title {
+        text-style: bold;
+        color: $error;
+        margin-bottom: 1;
+    }
+    #confirm-detail {
+        color: $text;
+        margin-bottom: 1;
+    }
+    #confirm-bytes {
+        color: $warning;
+        margin-bottom: 1;
+    }
+    #confirm-hint {
+        color: $text-disabled;
+    }
+    """
+
+    def __init__(self, pending: PendingWrite):
+        super().__init__()
+        self._pending = pending
+
+    def compose(self) -> ComposeResult:
+        hex_str = " ".join(f"{b:02X}" for b in self._pending.data)
+        with Vertical(id="confirm-dialog"):
+            yield Label("⚠  Confirm Write to PLC", id="confirm-title")
+            yield Label(self._pending.description, id="confirm-detail")
+            yield Label(
+                f"DB{self._pending.db} offset {self._pending.offset}: [{hex_str}] ({len(self._pending.data)} bytes)",
+                id="confirm-bytes",
+            )
+            if self._pending.detail:
+                yield Label(self._pending.detail, id="confirm-extra")
+            yield Label("Press Y to confirm write · N or Escape to cancel", id="confirm-hint")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class S7MonitorApp(App):
     """S7 PLC Data Block Monitor."""
 
@@ -246,6 +321,7 @@ class S7MonitorApp(App):
     ]
 
     paused: reactive[bool] = reactive(False)
+    _pending_write: PendingWrite | None = None
 
     def __init__(
         self,
@@ -435,32 +511,61 @@ class S7MonitorApp(App):
         var = next((v for v in self._variables if v.spec == row_key.value), None)
         if var is None:
             return
-        self._write_variable(var, result)
+        self._prepare_variable_write(var, result)
 
     @work(thread=True)
-    def _write_variable(self, var: S7Variable, text: str) -> None:
-        """Write a variable value to the PLC."""
+    def _prepare_variable_write(self, var: S7Variable, text: str) -> None:
+        """Prepare a variable write and show confirmation dialog."""
         log = self.query_one("#log-panel", RichLog)
         try:
             parsed = var.parse_input(text)
 
             if var.type == S7Type.BIT:
-                # Need to read current byte first to preserve other bits
                 result = self._connection.db_read(self._db, var.offset, 1)
                 encoded = var.encode_bit(result.data[0], parsed)
             else:
                 encoded = var.encode(parsed)
 
-            self._connection.db_write(self._db, var.offset, encoded)
-            self.call_from_thread(log.write, f"[green]Wrote {var.display_name} = {parsed}[/green]")
+            pending = PendingWrite(
+                description=f"Set {var.display_name} = {parsed}",
+                db=self._db,
+                offset=var.offset,
+                data=encoded,
+                detail=f"Variable: {var.spec} ({var.type.value})",
+            )
+            self.call_from_thread(self._confirm_and_write, pending)
+        except Exception as e:
+            self.call_from_thread(log.write, f"[red]Encode failed for {var.display_name}: {e}[/red]")
 
-            # Force a refresh
+    def _confirm_and_write(self, pending: PendingWrite) -> None:
+        """Show confirmation dialog then execute write if confirmed."""
+        self._pending_write = pending
+        self.push_screen(ConfirmWriteScreen(pending), self._on_confirm_result)
+
+    def _on_confirm_result(self, confirmed: bool) -> None:
+        """Handle confirmation dialog result."""
+        if not confirmed or self._pending_write is None:
+            log = self.query_one("#log-panel", RichLog)
+            log.write("[yellow]Write cancelled[/yellow]")
+            self._pending_write = None
+            return
+        self._execute_write(self._pending_write)
+        self._pending_write = None
+
+    @work(thread=True)
+    def _execute_write(self, pending: PendingWrite) -> None:
+        """Execute a confirmed write to the PLC."""
+        log = self.query_one("#log-panel", RichLog)
+        try:
+            self._connection.db_write(pending.db, pending.offset, pending.data)
+            hex_str = " ".join(f"{b:02X}" for b in pending.data)
+            self.call_from_thread(log.write, f"[green]✓ {pending.description} [{hex_str}][/green]")
             self.call_from_thread(self._do_read)
         except Exception as e:
-            self.call_from_thread(log.write, f"[red]Write failed for {var.display_name}: {e}[/red]")
+            self.call_from_thread(log.write, f"[red]Write failed: {e}[/red]")
 
     def action_toggle_bit(self) -> None:
-        """Toggle a Bit variable with spacebar."""
+        """Toggle a Bit variable with confirmation."""
         table = self.query_one("#var-table", DataTable)
         if table.row_count == 0:
             return
@@ -472,7 +577,7 @@ class S7MonitorApp(App):
             return
         current = self._current_values.get(var.spec, "0")
         new_val = "0" if current == "1" else "1"
-        self._write_variable(var, new_val)
+        self._prepare_variable_write(var, new_val)
 
     def action_command_bar(self) -> None:
         """Open the command bar for raw operations."""
@@ -486,7 +591,7 @@ class S7MonitorApp(App):
 
     @work(thread=True)
     def _execute_command(self, cmd_text: str) -> None:
-        """Execute a command bar command."""
+        """Parse a command and prepare write with confirmation, or execute read."""
         log = self.query_one("#log-panel", RichLog)
         parts = cmd_text.strip().split()
         if not parts:
@@ -500,12 +605,15 @@ class S7MonitorApp(App):
                 db = int(parts[1])
                 offset = int(parts[2])
                 hex_bytes = bytearray(int(b, 16) for b in parts[3:])
-                self._connection.db_write(db, offset, hex_bytes)
-                hex_str = " ".join(f"{b:02X}" for b in hex_bytes)
-                self.call_from_thread(log.write, f"[green]Wrote DB{db}[{offset}]: {hex_str}[/green]")
-                self.call_from_thread(self._do_read)
+                pending = PendingWrite(
+                    description=f"Raw write to DB{db} at offset {offset}",
+                    db=db,
+                    offset=offset,
+                    data=hex_bytes,
+                )
+                self.call_from_thread(self._confirm_and_write, pending)
             except Exception as e:
-                self.call_from_thread(log.write, f"[red]Write command failed: {e}[/red]")
+                self.call_from_thread(log.write, f"[red]Write command parse error: {e}[/red]")
 
         elif command == "set" and len(parts) >= 3:
             # set <var_spec> <value>
@@ -520,14 +628,19 @@ class S7MonitorApp(App):
                 else:
                     encoded = var.encode(parsed)
 
-                self._connection.db_write(var.db, var.offset, encoded)
-                self.call_from_thread(log.write, f"[green]Set {var.spec} = {parsed}[/green]")
-                self.call_from_thread(self._do_read)
+                pending = PendingWrite(
+                    description=f"Set {var.spec} = {parsed}",
+                    db=var.db,
+                    offset=var.offset,
+                    data=encoded,
+                    detail=f"Variable: {var.spec} ({var.type.value})",
+                )
+                self.call_from_thread(self._confirm_and_write, pending)
             except Exception as e:
                 self.call_from_thread(log.write, f"[red]Set command failed: {e}[/red]")
 
         elif command == "read" and len(parts) >= 4:
-            # read <db> <offset> <size>
+            # read <db> <offset> <size>  — reads are safe, no confirmation needed
             try:
                 db = int(parts[1])
                 offset = int(parts[2])
