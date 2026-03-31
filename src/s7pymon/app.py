@@ -279,12 +279,23 @@ class S7MonitorApp(App):
             yield RichLog(id="log-panel", highlight=True, markup=True)
         yield Footer()
 
+    # Column key constants for DataTable
+    COL_VARIABLE = "col_variable"
+    COL_TYPE = "col_type"
+    COL_OFFSET = "col_offset"
+    COL_VALUE = "col_value"
+    COL_RAW_HEX = "col_raw_hex"
+
     def on_mount(self) -> None:
         # Set up the variable table
         table = self.query_one("#var-table", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
-        table.add_columns("Variable", "Type", "Offset", "Value", "Raw Hex")
+        table.add_column("Variable", key=self.COL_VARIABLE)
+        table.add_column("Type", key=self.COL_TYPE)
+        table.add_column("Offset", key=self.COL_OFFSET)
+        table.add_column("Value", key=self.COL_VALUE)
+        table.add_column("Raw Hex", key=self.COL_RAW_HEX)
 
         for var in self._variables:
             table.add_row(
@@ -388,12 +399,11 @@ class S7MonitorApp(App):
 
                 row_key = var.spec
                 # Update existing row values
-                row_idx = table.get_row_index(row_key)
-                table.update_cell(row_key, "Value", value_display)
-                table.update_cell(row_key, "Raw Hex", raw_display)
+                table.update_cell(row_key, self.COL_VALUE, value_display)
+                table.update_cell(row_key, self.COL_RAW_HEX, raw_display)
 
             except Exception as e:
-                table.update_cell(var.spec, "Value", Text(f"ERR: {e}", style="red"))
+                table.update_cell(var.spec, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
 
         # Update connection status poll count
         conn_status = self.query_one("#conn-status", ConnectionStatus)
