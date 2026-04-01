@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Union
 
@@ -24,6 +25,7 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
 
 from .connection import ConnectionConfig, ConnectionState, S7Connection
+from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
 from .variable import S7Area, S7Type, S7Variable, compute_read_range, extract_value
 
 
@@ -387,6 +389,8 @@ class S7MonitorApp(App):
         read_groups: list[ReadGroup],
         poll_interval: float = 1.0,
         write_mode: WriteMode = WriteMode.DISABLED,
+        log_file: str | None = None,
+        log_format: LogFormat = LogFormat.CSV,
     ):
         super().__init__()
         self._connection = connection
@@ -394,6 +398,9 @@ class S7MonitorApp(App):
         self._read_groups = read_groups
         self._poll_interval = poll_interval
         self.write_mode = write_mode
+        self._log_file = log_file
+        self._log_format = log_format
+        self._data_logger: DataLogger | None = None
         self._current_data: dict[str, bytearray] = {}  # keyed by group label
         self._current_values: dict[str, str] = {}
         self._previous_values: dict[str, str] = {}
@@ -453,6 +460,22 @@ class S7MonitorApp(App):
 
         log = self.query_one("#log-panel", RichLog)
         log.write("[bold]S7 Monitor[/bold] ready. Connecting…")
+
+        # Start data logger if configured
+        if self._log_file:
+            try:
+                metadata = SessionMetadata(
+                    started=datetime.now(timezone.utc).isoformat(),
+                    address=self._connection.config.display,
+                    variables=[v.spec for v in self._variables],
+                    poll_interval=self._poll_interval,
+                    format=self._log_format.value,
+                )
+                self._data_logger = DataLogger(self._log_file, self._log_format, metadata)
+                self._data_logger.open()
+                log.write(f"[dim]Logging to {self._log_file} ({self._log_format.value})[/dim]")
+            except Exception as e:
+                log.write(f"[red]Failed to open log file: {e}[/red]")
 
         # Start the connection and polling
         self._connect_and_poll()
@@ -545,8 +568,23 @@ class S7MonitorApp(App):
                 raw_hex = " ".join(f"{b:02X}" for b in raw_bytes)
 
                 # Determine change styling
-                changed = self._previous_values.get(var.spec) != formatted and self._previous_values.get(var.spec) is not None
+                prev = self._previous_values.get(var.spec)
+                changed = prev is not None and prev != formatted
                 style = "bold yellow" if changed else ""
+
+                # Log change to file
+                if changed and self._data_logger is not None:
+                    area_label = f"DB{var.db}" if var.area == S7Area.DB else var.area.value
+                    self._data_logger.log(LogEntry(
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        variable=var.display_name,
+                        type=var.type.value,
+                        area=area_label,
+                        offset=var.offset,
+                        old_value=prev,
+                        new_value=formatted,
+                        raw_hex=raw_hex,
+                    ))
 
                 # Update row
                 value_display = Text(formatted, style=style) if changed else formatted
@@ -799,3 +837,8 @@ class S7MonitorApp(App):
         self._connection.disconnect()
         self._update_connection_state()
         self._connect_and_poll()
+
+    def on_unmount(self) -> None:
+        """Clean up resources when the app exits."""
+        if self._data_logger is not None:
+            self._data_logger.close()

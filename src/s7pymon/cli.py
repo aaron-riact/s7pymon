@@ -99,6 +99,21 @@ def build_read_groups(variables: list[S7Variable]):
     default=None,
     help="Write permission mode (default: disabled).",
 )
+@click.option(
+    "-l",
+    "--log-file",
+    "log_file",
+    default=None,
+    type=click.Path(),
+    help="Log data changes to file.",
+)
+@click.option(
+    "--log-format",
+    "log_format",
+    type=click.Choice(["csv", "jsonl"], case_sensitive=False),
+    default=None,
+    help="Log file format (default: csv).",
+)
 def main(
     address: str | None,
     variables: tuple[str, ...],
@@ -112,6 +127,8 @@ def main(
     db_start: int | None,
     db_size: int | None,
     write_mode: str | None,
+    log_file: str | None,
+    log_format: str | None,
 ) -> None:
     """s7pymon — Live S7 PLC data monitor.
 
@@ -165,6 +182,8 @@ def main(
         db_start=db_start,
         db_size=db_size,
         variables=variables,
+        log_file=log_file,
+        log_format=log_format,
     )
 
     # Resolve defaults for values that weren't set anywhere
@@ -227,12 +246,21 @@ def main(
         click.echo("Try: s7pymon --help", err=True)
         sys.exit(1)
 
+    from .logging import LogFormat
+
+    # Resolve log format
+    final_log_format = LogFormat.CSV
+    if cfg.log_format:
+        final_log_format = LogFormat(cfg.log_format.lower())
+
     app = S7MonitorApp(
         connection=connection,
         variables=parsed_vars,
         read_groups=read_groups,
         poll_interval=final_interval,
         write_mode=final_write_mode,
+        log_file=cfg.log_file,
+        log_format=final_log_format,
     )
     app.run()
 
