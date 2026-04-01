@@ -1,6 +1,7 @@
 import pytest
 from click.testing import CliRunner
 
+from s7pymon.app import WriteMode
 from s7pymon.cli import (
     build_default_variables,
     build_read_groups,
@@ -120,3 +121,21 @@ class TestCLIHelp:
         )
         assert result.exit_code != 0
         assert "conflicts" in result.output
+
+
+class TestWriteMode:
+    def test_write_mode_enum_values(self):
+        assert WriteMode.DISABLED.value == "disabled"
+        assert WriteMode.CONFIRM.value == "confirm"
+        assert WriteMode.ALLOWED.value == "allowed"
+
+    def test_write_mode_from_string(self):
+        assert WriteMode("disabled") == WriteMode.DISABLED
+        assert WriteMode("confirm") == WriteMode.CONFIRM
+        assert WriteMode("allowed") == WriteMode.ALLOWED
+
+    def test_help_shows_write_mode_option(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["--help"])
+        assert "--write-mode" in result.output
+        assert "disabled" in result.output

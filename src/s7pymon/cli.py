@@ -89,6 +89,14 @@ def build_read_groups(variables: list[S7Variable]):
 @click.option("--db", "db_number", default=None, type=int, help="DB number for raw range mode.")
 @click.option("--start", "db_start", default=0, type=int, help="Start offset for raw range mode.")
 @click.option("--size", "db_size", default=None, type=int, help="Number of bytes for raw range mode.")
+@click.option(
+    "-w",
+    "--write-mode",
+    "write_mode",
+    type=click.Choice(["disabled", "confirm", "allowed"], case_sensitive=False),
+    default="disabled",
+    help="Write permission mode (default: disabled).",
+)
 def main(
     address: str,
     variables: tuple[str, ...],
@@ -100,6 +108,7 @@ def main(
     db_number: int | None,
     db_start: int,
     db_size: int | None,
+    write_mode: str,
 ) -> None:
     """s7pymon — Live S7 PLC data monitor.
 
@@ -129,7 +138,9 @@ def main(
       c       Reconnect
       q       Quit
     """
-    from .app import S7MonitorApp
+    from .app import S7MonitorApp, WriteMode
+
+    wm = WriteMode(write_mode.lower())
 
     config = ConnectionConfig(
         address=address,
@@ -179,6 +190,7 @@ def main(
         variables=parsed_vars,
         read_groups=read_groups,
         poll_interval=interval,
+        write_mode=wm,
     )
     app.run()
 

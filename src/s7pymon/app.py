@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from enum import Enum
 from typing import Union
 
 from rich.text import Text
@@ -24,6 +25,14 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, St
 
 from .connection import ConnectionConfig, ConnectionState, S7Connection
 from .variable import S7Area, S7Type, S7Variable, compute_read_range, extract_value
+
+
+class WriteMode(Enum):
+    """Controls whether writes to the PLC are permitted."""
+
+    DISABLED = "disabled"  # Writes blocked entirely
+    CONFIRM = "confirm"  # Writes require Y/N confirmation
+    ALLOWED = "allowed"  # Writes go through immediately
 
 
 @dataclass
@@ -91,6 +100,7 @@ class ConnectionStatus(Static):
     state: reactive[ConnectionState] = reactive(ConnectionState.DISCONNECTED)
     config_text: reactive[str] = reactive("")
     poll_count: reactive[int] = reactive(0)
+    write_mode: reactive[WriteMode] = reactive(WriteMode.DISABLED)
 
     def render(self) -> Text:
         state = self.state
@@ -112,6 +122,18 @@ class ConnectionStatus(Static):
             result += Text(f"  │  {self.config_text}", style="dim")
         if self.poll_count > 0:
             result += Text(f"  │  polls: {self.poll_count}", style="dim")
+
+        # Write mode indicator
+        wm = self.write_mode
+        if wm == WriteMode.DISABLED:
+            result += Text("  │  ", style="dim")
+            result += Text("🔒 read-only", style="dim red")
+        elif wm == WriteMode.CONFIRM:
+            result += Text("  │  ", style="dim")
+            result += Text("writes: confirm", style="dim yellow")
+        else:
+            result += Text("  │  ", style="dim")
+            result += Text("writes: allowed", style="dim green")
         return result
 
 
@@ -351,9 +373,11 @@ class S7MonitorApp(App):
         Binding("r", "force_refresh", "Refresh"),
         Binding("p", "toggle_pause", "Pause"),
         Binding("c", "reconnect", "Reconnect"),
+        Binding("w", "cycle_write_mode", "Write Mode"),
     ]
 
     paused: reactive[bool] = reactive(False)
+    write_mode: reactive[WriteMode] = reactive(WriteMode.DISABLED)
     _pending_write: PendingWrite | None = None
 
     def __init__(
@@ -362,12 +386,14 @@ class S7MonitorApp(App):
         variables: list[S7Variable],
         read_groups: list[ReadGroup],
         poll_interval: float = 1.0,
+        write_mode: WriteMode = WriteMode.DISABLED,
     ):
         super().__init__()
         self._connection = connection
         self._variables = variables
         self._read_groups = read_groups
         self._poll_interval = poll_interval
+        self.write_mode = write_mode
         self._current_data: dict[str, bytearray] = {}  # keyed by group label
         self._current_values: dict[str, str] = {}
         self._previous_values: dict[str, str] = {}
@@ -419,6 +445,7 @@ class S7MonitorApp(App):
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.config_text = self._connection.config.display
         conn_status.state = self._connection.state
+        conn_status.write_mode = self.write_mode
 
         hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
         group_labels = ", ".join(g.label for g in self._read_groups)
@@ -541,8 +568,18 @@ class S7MonitorApp(App):
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.state = self._connection.state
 
+    def _check_write_allowed(self) -> bool:
+        """Check if writes are permitted in the current mode. Logs if blocked."""
+        if self.write_mode == WriteMode.DISABLED:
+            log = self.query_one("#log-panel", RichLog)
+            log.write("[dim red]Writes disabled — press W to change write mode[/dim red]")
+            return False
+        return True
+
     def action_edit_variable(self) -> None:
         """Open edit dialog for the selected variable."""
+        if not self._check_write_allowed():
+            return
         table = self.query_one("#var-table", DataTable)
         if table.row_count == 0:
             return
@@ -591,7 +628,15 @@ class S7MonitorApp(App):
             self.call_from_thread(log.write, f"[red]Encode failed for {var.display_name}: {e}[/red]")
 
     def _confirm_and_write(self, pending: PendingWrite) -> None:
-        """Show confirmation dialog then execute write if confirmed."""
+        """Route write through confirmation or execute directly based on write mode."""
+        if self.write_mode == WriteMode.DISABLED:
+            log = self.query_one("#log-panel", RichLog)
+            log.write("[dim red]Write blocked — writes are disabled[/dim red]")
+            return
+        if self.write_mode == WriteMode.ALLOWED:
+            self._execute_write(pending)
+            return
+        # WriteMode.CONFIRM — show confirmation dialog
         self._pending_write = pending
         self.push_screen(ConfirmWriteScreen(pending), self._on_confirm_result)
 
@@ -619,6 +664,8 @@ class S7MonitorApp(App):
 
     def action_toggle_bit(self) -> None:
         """Toggle a Bit variable with confirmation."""
+        if not self._check_write_allowed():
+            return
         table = self.query_one("#var-table", DataTable)
         if table.row_count == 0:
             return
@@ -634,6 +681,8 @@ class S7MonitorApp(App):
 
     def action_command_bar(self) -> None:
         """Open the command bar for raw operations."""
+        if not self._check_write_allowed():
+            return
         self.push_screen(CommandBarScreen(), self._on_command_result)
 
     def _on_command_result(self, result: str | None) -> None:
@@ -715,6 +764,24 @@ class S7MonitorApp(App):
     def action_force_refresh(self) -> None:
         """Force an immediate data read."""
         self._do_read()
+
+    def action_cycle_write_mode(self) -> None:
+        """Cycle through write modes: disabled → confirm → allowed → disabled."""
+        cycle = {
+            WriteMode.DISABLED: WriteMode.CONFIRM,
+            WriteMode.CONFIRM: WriteMode.ALLOWED,
+            WriteMode.ALLOWED: WriteMode.DISABLED,
+        }
+        self.write_mode = cycle[self.write_mode]
+        conn_status = self.query_one("#conn-status", ConnectionStatus)
+        conn_status.write_mode = self.write_mode
+        log = self.query_one("#log-panel", RichLog)
+        labels = {
+            WriteMode.DISABLED: "[dim red]Write mode: disabled (read-only)[/dim red]",
+            WriteMode.CONFIRM: "[yellow]Write mode: confirm (Y/N prompt)[/yellow]",
+            WriteMode.ALLOWED: "[green]Write mode: allowed (no confirmation)[/green]",
+        }
+        log.write(labels[self.write_mode])
 
     def action_toggle_pause(self) -> None:
         """Toggle polling pause."""
