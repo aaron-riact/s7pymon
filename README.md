@@ -13,6 +13,7 @@ Built with **Textual** + **python-snap7**.
 - **Write with confirmation** — edit values, toggle bits, or use the command bar; all writes require explicit confirmation
 - **Keyboard-driven** — no mouse needed
 - **Web dashboard** — an ultra-modern browser UI streaming live data over Server-Sent Events (`s7pymon-web`), with zero extra dependencies
+- **Built-in demo** — launch the full browser dashboard with synthetic live PLC data using `s7pymon-demo`
 
 ## Requirements
 
@@ -145,6 +146,33 @@ library `http.server` and pushes live telemetry over **Server-Sent Events**.
 s7pymon-web 192.168.1.100 --db 210 --start 0 --size 18 --open
 s7pymon-web 192.168.1.100 DB210.Byte0:heartbeat DB210.Int4:temp --http-port 8730
 ```
+
+### Quick browser demo
+
+If you want to show the UI without a PLC, start the built-in demo:
+
+```bash
+# installed package
+s7pymon-demo --open
+
+# or from a checkout
+uv run s7pymon-demo --open
+```
+
+That starts the same dashboard at `http://127.0.0.1:8731/`, but feeds it with
+synthetic `DB210` values (`heartbeat`, `temperature`, `pressure`, `e_stop`,
+`running`, `cycles`). The data changes continuously, writes are safe, and the
+default write mode is **allowed** so the demo is immediately interactive.
+
+Useful demo options:
+
+| Option | Description |
+|--------|-------------|
+| `--open` | Open the dashboard in your browser automatically |
+| `-P`, `--http-port PORT` | Serve the demo on another HTTP port |
+| `-i`, `--interval SECONDS` | Slow down or speed up the fake PLC |
+| `-w`, `--write-mode MODE` | Override the demo write mode (`disabled`, `confirm`, `allowed`) |
+| `--seed N` | Make the synthetic values reproducible |
 
 ### Web options
 
