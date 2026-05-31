@@ -61,6 +61,30 @@ def group_key(area: S7Area, db: int) -> str:
     return area_label(area, db)
 
 
+@dataclass
+class ReadGroup:
+    """A group of variables in the same area/DB to be read together.
+
+    Frontends read one buffer per group; the engine keys decoded variables to
+    their group via :pyattr:`key` (which matches :func:`group_key`).
+    """
+
+    area: S7Area
+    db: int  # 0 for non-DB areas
+    start: int
+    size: int
+
+    @property
+    def label(self) -> str:
+        if self.area == S7Area.DB:
+            return f"DB{self.db}"
+        return f"{self.area.value} ({self.area.description})"
+
+    @property
+    def key(self) -> str:
+        return group_key(self.area, self.db)
+
+
 @dataclass(frozen=True)
 class VariableReading:
     """A single variable's decoded value for one poll cycle."""
@@ -171,7 +195,7 @@ class MonitorEngine:
         self,
         connection: S7Connection,
         variables: list[S7Variable],
-        read_groups: list,
+        read_groups: list[ReadGroup],
         poll_interval: float = 1.0,
         write_mode: WriteMode = WriteMode.DISABLED,
         logger: DataLogger | None = None,
@@ -197,7 +221,7 @@ class MonitorEngine:
         return self._variables
 
     @property
-    def read_groups(self) -> list:
+    def read_groups(self) -> list[ReadGroup]:
         return self._read_groups
 
     @property

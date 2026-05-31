@@ -24,7 +24,7 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
 
 from .connection import ConnectionConfig, ConnectionState, S7Connection
-from .engine import WriteMode, format_hex_dump
+from .engine import ReadGroup, WriteMode, format_hex_dump
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
 from .variable import S7Area, S7Type, S7Variable, compute_read_range, extract_value
 
@@ -45,28 +45,6 @@ class PendingWrite:
 
     @property
     def target_label(self) -> str:
-        if self.area == S7Area.DB:
-            return f"DB{self.db}"
-        return self.area.value
-
-
-@dataclass
-class ReadGroup:
-    """A group of variables in the same area/DB to be read together."""
-
-    area: S7Area
-    db: int  # 0 for non-DB areas
-    start: int
-    size: int
-
-    @property
-    def label(self) -> str:
-        if self.area == S7Area.DB:
-            return f"DB{self.db}"
-        return f"{self.area.value} ({self.area.description})"
-
-    @property
-    def key(self) -> str:
         if self.area == S7Area.DB:
             return f"DB{self.db}"
         return self.area.value
