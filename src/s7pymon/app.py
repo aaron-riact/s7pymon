@@ -12,7 +12,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Union
 
 from rich.text import Text
@@ -25,16 +24,11 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
 
 from .connection import ConnectionConfig, ConnectionState, S7Connection
+from .engine import WriteMode, format_hex_dump
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
 from .variable import S7Area, S7Type, S7Variable, compute_read_range, extract_value
 
-
-class WriteMode(Enum):
-    """Controls whether writes to the PLC are permitted."""
-
-    DISABLED = "disabled"  # Writes blocked entirely
-    CONFIRM = "confirm"  # Writes require Y/N confirmation
-    ALLOWED = "allowed"  # Writes go through immediately
+__all__ = ["S7MonitorApp", "WriteMode", "format_hex_dump", "ReadGroup"]
 
 
 @dataclass
@@ -76,24 +70,6 @@ class ReadGroup:
         if self.area == S7Area.DB:
             return f"DB{self.db}"
         return self.area.value
-
-
-def format_hex_dump(data: bytearray, start_offset: int = 0, bytes_per_line: int = 16) -> str:
-    """Format raw bytes as a hex dump with offset, hex values, and ASCII."""
-    lines = []
-    for i in range(0, len(data), bytes_per_line):
-        chunk = data[i : i + bytes_per_line]
-        offset = start_offset + i
-        hex_part = " ".join(f"{b:02X}" for b in chunk)
-        # Add gap in middle
-        if len(chunk) > 8:
-            hex_left = " ".join(f"{b:02X}" for b in chunk[:8])
-            hex_right = " ".join(f"{b:02X}" for b in chunk[8:])
-            hex_part = f"{hex_left}  {hex_right}"
-        ascii_part = "".join(chr(b) if 32 <= b < 127 else "·" for b in chunk)
-        hex_padded = hex_part.ljust(3 * bytes_per_line + 1)
-        lines.append(f"  {offset:04X} │ {hex_padded}│ {ascii_part}")
-    return "\n".join(lines)
 
 
 class ConnectionStatus(Static):
