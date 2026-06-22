@@ -30,14 +30,17 @@ Examples:
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Any
 
 import click
 
 from .config import S7MonitorConfig
 from .connection import S7Connection
+from .eip import EIPConnection
 from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
 from .protocols import Connection, ConnectionConfig, DataSource
+from .rules import FollowRule, OutputRule, PulseRule, RulesEngine, ToggleRule
 from .variable import S7Area, DataType, S7Variable, compute_read_range
 
 
@@ -63,36 +66,68 @@ def build_default_variables(db: int, start: int, size: int) -> list[S7Variable]:
     ]
 
 
-def build_read_groups(variables: list[S7Variable]) -> list[ReadGroup]:
+def build_read_groups(variables: list) -> list[ReadGroup]:
     """Group variables by source and compute one read range per group."""
-    groups: dict[DataSource, list[S7Variable]] = defaultdict(list)
+    groups: dict[DataSource, list] = defaultdict(list)
     for var in variables:
-        groups[s7_source(var)].append(var)
+        groups[var.source].append(var)
 
     read_groups = []
     for source, group_vars in groups.items():
         start, size = compute_read_range(group_vars)
-        read_groups.append(ReadGroup(source, start, size, label=_s7_group_label(group_vars[0])))
+        read_groups.append(ReadGroup(source, start, size, label=_group_label(group_vars[0])))
 
     return read_groups
 
 
-def s7_source(var: S7Variable) -> DataSource:
-    """The data source an S7 variable is read from: its DB, or its area."""
-    if var.area == S7Area.DB:
-        return DataSource.s7_db(var.db)
-    return DataSource.s7_area(var.area.value)
+def _group_label(var) -> str:
+    """Hex dump heading for the group a variable belongs to.
 
-
-def _s7_group_label(var: S7Variable) -> str:
-    """Hex dump heading: ``DB210``, or ``EB (Process Input)`` for an area."""
-    if var.area == S7Area.DB:
-        return f"DB{var.db}"
-    return f"{var.area.value} ({var.area.description})"
+    S7 areas get their description ("EB (Process Input)"); everything else
+    is named by its source.
+    """
+    if isinstance(var, S7Variable) and var.area != S7Area.DB:
+        return f"{var.area.value} ({var.area.description})"
+    return str(var.source)
 
 
 class RuntimeConfigError(ValueError):
     """Raised when a merged config cannot be turned into a runnable runtime."""
+
+
+def build_rules_engine(rules_cfg: dict[str, dict[str, Any]]) -> RulesEngine | None:
+    """Build a :class:`RulesEngine` from a rules config dict.
+
+    The dict maps target variable spec -> rule definition:
+
+    .. code:: yaml
+
+       rules:
+         EIP.Output.Byte0:
+           follow: EIP.Input.Byte0
+         EIP.Output.Bit0.0:
+           toggle: 2
+         EIP.Output.Bit0.1:
+           pulse: 5
+    """
+    if not rules_cfg:
+        return None
+    rules: list[OutputRule] = []
+    for target, rule_def in rules_cfg.items():
+        if "follow" in rule_def:
+            rules.append(FollowRule(target=str(target), source=str(rule_def["follow"])))
+        elif "toggle" in rule_def:
+            period = int(rule_def["toggle"])
+            rules.append(ToggleRule(target=str(target), period=period))
+        elif "pulse" in rule_def:
+            duration = int(rule_def["pulse"])
+            rules.append(PulseRule(target=str(target), duration=duration))
+        else:
+            raise RuntimeConfigError(
+                f"Unknown rule type for {target!r}: expected 'follow', 'toggle', "
+                f"or 'pulse', got keys {list(rule_def.keys())}"
+            )
+    return RulesEngine(rules)
 
 
 @dataclass
@@ -105,12 +140,13 @@ class ResolvedRuntime:
     """
 
     connection: Connection
-    variables: list[S7Variable]
+    variables: list
     read_groups: list[ReadGroup]
     poll_interval: float
     write_mode: WriteMode
     log_file: str | None
     log_format: LogFormat
+    rules_engine: RulesEngine | None = None
 
 
 def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
@@ -124,18 +160,35 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
     if not final_address:
         raise RuntimeConfigError("ADDRESS is required (as argument or in config file).")
 
-    conn_config = ConnectionConfig(
-        address=final_address,
-        rack=cfg.rack if cfg.rack is not None else 0,
-        slot=cfg.slot if cfg.slot is not None else 2,
-        tcp_port=cfg.port if cfg.port is not None else 102,
-        timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
-    )
-    connection = S7Connection(conn_config)
-
+    protocol = (cfg.protocol or "s7").lower()
     poll_interval = cfg.interval if cfg.interval is not None else 1.0
     write_mode = WriteMode(cfg.write_mode.lower()) if cfg.write_mode else WriteMode.DISABLED
     log_format = LogFormat(cfg.log_format.lower()) if cfg.log_format else LogFormat.CSV
+
+    if protocol == "eip":
+        conn_config = ConnectionConfig(
+            address=final_address,
+            tcp_port=cfg.port if cfg.port is not None else 44818,
+            timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
+            protocol="eip",
+            eip_port=cfg.eip_port if cfg.eip_port is not None else 44818,
+            input_assembly=cfg.input_assembly if cfg.input_assembly is not None else 101,
+            output_assembly=cfg.output_assembly if cfg.output_assembly is not None else 100,
+            config_assembly=cfg.config_assembly if cfg.config_assembly is not None else 102,
+            input_size=cfg.input_size if cfg.input_size is not None else 32,
+            output_size=cfg.output_size if cfg.output_size is not None else 32,
+            rpi_ms=cfg.rpi_ms if cfg.rpi_ms is not None else 50,
+        )
+        connection: Connection = EIPConnection(conn_config)
+    else:
+        conn_config = ConnectionConfig(
+            address=final_address,
+            rack=cfg.rack if cfg.rack is not None else 0,
+            slot=cfg.slot if cfg.slot is not None else 2,
+            tcp_port=cfg.port if cfg.port is not None else 102,
+            timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
+        )
+        connection = S7Connection(conn_config)
 
     if cfg.variables:
         parsed_vars = []
@@ -145,8 +198,8 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
             except ValueError as e:
                 raise RuntimeConfigError(f"Error parsing variable '{v}': {e}") from e
 
-        if cfg.db is not None:
-            db_vars = [v for v in parsed_vars if v.area == S7Area.DB]
+        if protocol == "s7" and cfg.db is not None:
+            db_vars = [v for v in parsed_vars if isinstance(v, S7Variable) and v.area == S7Area.DB]
             db_dbs = {v.db for v in db_vars}
             if db_dbs and cfg.db not in db_dbs:
                 raise RuntimeConfigError(
@@ -155,18 +208,18 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
 
         read_groups = build_read_groups(parsed_vars)
 
-        if cfg.size is not None:
+        if protocol == "s7" and cfg.size is not None:
             db_start_val = cfg.start if cfg.start is not None else 0
             if cfg.db is not None:
                 wanted = {DataSource.s7_db(cfg.db)}
             else:
-                wanted = {s7_source(v) for v in parsed_vars if v.area == S7Area.DB}
+                wanted = {v.source for v in parsed_vars if isinstance(v, S7Variable) and v.area == S7Area.DB}
             for group in read_groups:
                 if group.source in wanted:
                     group.size = max(group.size, cfg.size)
                     group.start = min(group.start, db_start_val)
 
-    elif cfg.db is not None and cfg.size is not None:
+    elif protocol == "s7" and cfg.db is not None and cfg.size is not None:
         db_start_val = cfg.start if cfg.start is not None else 0
         parsed_vars = build_default_variables(cfg.db, db_start_val, cfg.size)
         read_groups = build_read_groups(parsed_vars)
@@ -174,6 +227,8 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
         raise RuntimeConfigError(
             "Provide variable specs or --db and --size for raw range mode."
         )
+
+    rules_engine = build_rules_engine(cfg.rules)
 
     return ResolvedRuntime(
         connection=connection,
@@ -183,6 +238,7 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
         write_mode=write_mode,
         log_file=cfg.log_file,
         log_format=log_format,
+        rules_engine=rules_engine,
     )
 
 

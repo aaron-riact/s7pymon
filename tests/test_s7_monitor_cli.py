@@ -89,6 +89,17 @@ class TestBuildReadGroups:
         groups = build_read_groups(vars)
         assert len(groups) == 2
 
+    def test_eip_variables(self):
+        vars = [
+            S7Variable.parse("EIP.Input.Byte0"),
+            S7Variable.parse("EIP.Input.Int2"),
+            S7Variable.parse("EIP.Output.Byte0"),
+        ]
+        groups = build_read_groups(vars)
+        assert len(groups) == 2
+        sources = {str(g.source) for g in groups}
+        assert sources == {"EIP.Input", "EIP.Output"}
+
 
 class TestCLIHelp:
     def test_help_exits_0(self):

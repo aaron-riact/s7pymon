@@ -41,20 +41,26 @@ class FakeConnection:
         self.disconnect_calls += 1
         self.state = ConnectionState.DISCONNECTED
 
-    def area_read(self, area, start, size, db=0):
+    def read_source(self, source, offset, size):
         if self.read_error is not None:
             self.state = ConnectionState.ERROR
             raise self.read_error
-        area_key = S7Area(area)
-        buf = self._buffers.get((area_key, db), bytearray(64))
-        return ReadResult(data=bytearray(buf[start : start + size]), area=area, db=db,
-                          start=start, size=size)
+        area, db = self._parse(source)
+        buf = self._buffers.get((area, db), bytearray(64))
+        return ReadResult(data=bytearray(buf[offset : offset + size]),
+                          source=source, start=offset, size=size)
 
-    def area_write(self, area, offset, data, db=0):
-        self.writes.append((area, offset, bytes(data), db))
-        area_key = S7Area(area)
-        buf = self._buffers.setdefault((area_key, db), bytearray(64))
+    def write_source(self, source, offset, data):
+        self.writes.append((source, offset, bytes(data)))
+        area, db = self._parse(source)
+        buf = self._buffers.setdefault((area, db), bytearray(64))
         buf[offset : offset + len(data)] = data
+
+    @staticmethod
+    def _parse(source):
+        if source.value.startswith("DB"):
+            return S7Area.DB, int(source.value[2:])
+        return S7Area(source.value), 0
 
 
 def make_engine(buffers, variables, **kw):
@@ -174,7 +180,7 @@ class TestWrite:
         engine, conn = make_engine({(S7Area.DB, 210): bytearray(16)}, [var],
                                    write_mode=WriteMode.ALLOWED)
         res = engine.write_variable("DB210.Byte0", "0x2A")
-        assert conn.writes[-1] == ("DB", 0, b"\x2a", 210)
+        assert conn.writes[-1] == (DataSource.s7_db(210), 0, b"\x2a")
         assert res.bytes_hex == "2A"
         assert res.target == "DB210"
 
@@ -183,22 +189,21 @@ class TestWrite:
         engine, conn = make_engine({(S7Area.DB, 210): bytearray([0x00] + [0] * 15)},
                                    [var], write_mode=WriteMode.ALLOWED)
         engine.write_variable("DB210.Bit0.3", "1")
-        # bit 3 set -> 0x08
-        assert conn.writes[-1] == ("DB", 0, b"\x08", 210)
+        assert conn.writes[-1] == (DataSource.s7_db(210), 0, b"\x08")
 
     def test_write_spec_unmonitored(self):
         engine, conn = make_engine({(S7Area.DB, 5): bytearray(16)}, [],
                                    groups=[ReadGroup(DataSource.s7_db(5), start=0, size=16)],
                                    write_mode=WriteMode.ALLOWED)
         engine.write_spec("DB5.Byte2", "9")
-        assert conn.writes[-1] == ("DB", 2, b"\x09", 5)
+        assert conn.writes[-1] == (DataSource.s7_db(5), 2, b"\x09")
 
     def test_write_raw(self):
         engine, conn = make_engine({(S7Area.DB, 7): bytearray(16)}, [],
                                    groups=[ReadGroup(DataSource.s7_db(7), start=0, size=16)],
                                    write_mode=WriteMode.ALLOWED)
         res = engine.write_raw(7, 1, bytearray([0xFF, 0x01]))
-        assert conn.writes[-1] == ("DB", 1, b"\xff\x01", 7)
+        assert conn.writes[-1] == (DataSource.s7_db(7), 1, b"\xff\x01")
         assert res.bytes_hex == "FF 01"
 
 

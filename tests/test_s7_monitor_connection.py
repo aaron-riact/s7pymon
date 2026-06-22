@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 import pytest
 
 from s7pymon.connection import (
@@ -7,6 +7,7 @@ from s7pymon.connection import (
     ReadResult,
     S7Connection,
 )
+from s7pymon.protocols import DataSource
 from s7pymon.variable import S7Area
 
 
@@ -77,44 +78,6 @@ class TestS7Connection:
         assert connection.state == ConnectionState.DISCONNECTED
         assert connection.error == ""
 
-    def test_db_read(self, connection, mock_client):
-        mock_client.db_read.return_value = bytearray(b"\x01\x02\x03")
-        connection.connect()
-        result = connection.db_read(db=210, start=0, size=3)
-        assert isinstance(result, ReadResult)
-        assert result.data == bytearray(b"\x01\x02\x03")
-        assert result.db == 210
-        assert result.start == 0
-        assert result.size == 3
-        mock_client.db_read.assert_called_once_with(210, 0, 3)
-
-    def test_db_read_not_connected(self, connection):
-        with pytest.raises(ConnectionError, match="Not connected"):
-            connection.db_read(210, 0, 18)
-
-    def test_db_read_error_sets_state(self, connection, mock_client):
-        connection.connect()
-        mock_client.db_read.side_effect = RuntimeError("comm error")
-        with pytest.raises(RuntimeError):
-            connection.db_read(210, 0, 18)
-        assert connection.state == ConnectionState.ERROR
-
-    def test_db_write(self, connection, mock_client):
-        connection.connect()
-        connection.db_write(db=210, start=0, data=bytearray(b"\xff"))
-        mock_client.db_write.assert_called_once_with(210, 0, bytearray(b"\xff"))
-
-    def test_db_write_not_connected(self, connection):
-        with pytest.raises(ConnectionError, match="Not connected"):
-            connection.db_write(210, 0, bytearray(b"\xff"))
-
-    def test_db_write_error_sets_state(self, connection, mock_client):
-        connection.connect()
-        mock_client.db_write.side_effect = RuntimeError("write fail")
-        with pytest.raises(RuntimeError):
-            connection.db_write(210, 0, bytearray(b"\xff"))
-        assert connection.state == ConnectionState.ERROR
-
     def test_context_manager(self, connection, mock_client):
         with connection:
             assert connection.connected
@@ -131,16 +94,16 @@ class TestS7Connection:
 
     def test_timeout_params_set(self, connection, mock_client):
         connection.connect()
-        # Check that set_param was called for timeouts
         assert mock_client.set_param.call_count == 3
 
 
-class TestS7ConnectionAreaReadWrite:
+class TestS7ConnectionReadSource:
     @pytest.fixture
     def mock_client(self):
         client = MagicMock()
         client.get_connected.return_value = True
         client.connect.return_value = 0
+        client.db_read.return_value = bytearray(b"\x01\x02\x03")
         client.eb_read.return_value = bytearray(b"\xAA\xBB")
         client.ab_read.return_value = bytearray(b"\xCC\xDD")
         client.mb_read.return_value = bytearray(b"\xEE\xFF")
@@ -153,49 +116,80 @@ class TestS7ConnectionAreaReadWrite:
         conn.connect()
         return conn
 
-    def test_area_read_eb(self, connection, mock_client):
-        result = connection.area_read(S7Area.EB, start=0, size=2)
+    def test_read_db_source(self, connection, mock_client):
+        result = connection.read_source(DataSource.s7_db(210), 0, 3)
+        assert isinstance(result, ReadResult)
+        assert result.data == bytearray(b"\x01\x02\x03")
+        assert result.source == DataSource("DB210")
+        assert result.start == 0
+        assert result.size == 3
+        mock_client.db_read.assert_called_once_with(210, 0, 3)
+
+    def test_read_eb_source(self, connection, mock_client):
+        result = connection.read_source(DataSource.s7_area("EB"), 0, 2)
         assert result.data == bytearray(b"\xAA\xBB")
-        assert result.area == S7Area.EB
-        assert result.db == 0
+        assert result.source == DataSource("EB")
         mock_client.eb_read.assert_called_once_with(0, 2)
 
-    def test_area_read_ab(self, connection, mock_client):
-        result = connection.area_read(S7Area.AB, start=0, size=2)
+    def test_read_ab_source(self, connection, mock_client):
+        result = connection.read_source(DataSource.s7_area("AB"), 0, 2)
         assert result.data == bytearray(b"\xCC\xDD")
+        assert result.source == DataSource("AB")
         mock_client.ab_read.assert_called_once_with(0, 2)
 
-    def test_area_read_mb(self, connection, mock_client):
-        result = connection.area_read(S7Area.MB, start=0, size=2)
+    def test_read_mb_source(self, connection, mock_client):
+        result = connection.read_source(DataSource.s7_area("MB"), 0, 2)
         mock_client.mb_read.assert_called_once_with(0, 2)
 
-    def test_area_read_db_delegates(self, connection, mock_client):
-        mock_client.db_read.return_value = bytearray(b"\x01")
-        result = connection.area_read("DB", start=0, size=1, db=210)
-        mock_client.db_read.assert_called_once_with(210, 0, 1)
-        assert result.area == "DB"
-        assert result.db == 210
-
-    def test_area_write_eb(self, connection, mock_client):
-        connection.area_write("EB", offset=0, data=bytearray(b"\x01"))
-        mock_client.eb_write.assert_called_once_with(0, 1, bytearray(b"\x01"))
-
-    def test_area_write_ab(self, connection, mock_client):
-        connection.area_write("AB", offset=0, data=bytearray(b"\x01"))
-        mock_client.ab_write.assert_called_once_with(0, bytearray(b"\x01"))
-
-    def test_area_write_db_delegates(self, connection, mock_client):
-        connection.area_write("DB", offset=5, data=bytearray(b"\xFF"), db=210)
-        mock_client.db_write.assert_called_once_with(210, 5, bytearray(b"\xFF"))
-
-    def test_area_read_not_connected(self, mock_client):
+    def test_read_not_connected(self, mock_client):
         config = ConnectionConfig(address="10.0.0.1")
         conn = S7Connection(config, client=mock_client)
-        # Don't connect
         with pytest.raises(ConnectionError, match="Not connected"):
-            conn.area_read("EB", 0, 2)
+            conn.read_source(DataSource("EB"), 0, 2)
 
-    def test_db_read_returns_area_field(self, connection, mock_client):
-        mock_client.db_read.return_value = bytearray(b"\x01")
-        result = connection.db_read(db=210, start=0, size=1)
-        assert result.area == "DB"
+    def test_read_error_sets_state(self, connection, mock_client):
+        mock_client.db_read.side_effect = RuntimeError("comm error")
+        with pytest.raises(RuntimeError):
+            connection.read_source(DataSource("DB210"), 0, 18)
+        assert connection.state == ConnectionState.ERROR
+
+
+class TestS7ConnectionWriteSource:
+    @pytest.fixture
+    def mock_client(self):
+        client = MagicMock()
+        client.get_connected.return_value = True
+        client.connect.return_value = 0
+        client.db_write.return_value = 0
+        return client
+
+    @pytest.fixture
+    def connection(self, mock_client):
+        config = ConnectionConfig(address="10.0.0.1")
+        conn = S7Connection(config, client=mock_client)
+        conn.connect()
+        return conn
+
+    def test_write_db_source(self, connection, mock_client):
+        connection.write_source(DataSource.s7_db(210), 0, bytearray(b"\xff"))
+        mock_client.db_write.assert_called_once_with(210, 0, bytearray(b"\xff"))
+
+    def test_write_eb_source(self, connection, mock_client):
+        connection.write_source(DataSource.s7_area("EB"), 0, bytearray(b"\x01"))
+        mock_client.eb_write.assert_called_once_with(0, 1, bytearray(b"\x01"))
+
+    def test_write_ab_source(self, connection, mock_client):
+        connection.write_source(DataSource.s7_area("AB"), 0, bytearray(b"\x01"))
+        mock_client.ab_write.assert_called_once_with(0, bytearray(b"\x01"))
+
+    def test_write_not_connected(self, mock_client):
+        config = ConnectionConfig(address="10.0.0.1")
+        conn = S7Connection(config, client=mock_client)
+        with pytest.raises(ConnectionError, match="Not connected"):
+            conn.write_source(DataSource("DB210"), 0, bytearray(b"\xff"))
+
+    def test_write_error_sets_state(self, connection, mock_client):
+        mock_client.db_write.side_effect = RuntimeError("write fail")
+        with pytest.raises(RuntimeError):
+            connection.write_source(DataSource("DB210"), 0, bytearray(b"\xff"))
+        assert connection.state == ConnectionState.ERROR

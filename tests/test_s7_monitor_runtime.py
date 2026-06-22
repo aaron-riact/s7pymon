@@ -10,6 +10,7 @@ from s7pymon.cli import (
 )
 from s7pymon.config import S7MonitorConfig
 from s7pymon.engine import WriteMode
+from s7pymon.protocols import DataSource
 from s7pymon.logging import LogFormat
 from s7pymon.variable import S7Area
 
@@ -33,7 +34,7 @@ class TestResolveRuntime:
         assert rt.connection.config.address == "10.0.0.1"
         assert [v.spec for v in rt.variables] == ["DB210.Byte0", "DB210.Int4"]
         assert len(rt.read_groups) == 1
-        assert rt.read_groups[0].area == S7Area.DB
+        assert rt.read_groups[0].source == DataSource.s7_db(210)
 
     def test_defaults(self):
         rt = resolve_runtime(cfg(address="10.0.0.1", variables=["DB210.Byte0"]))

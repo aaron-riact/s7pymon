@@ -6,6 +6,7 @@ import urllib.request
 from click.testing import CliRunner
 
 from s7pymon.demo import DEMO_DB, build_demo_engine, demo_web_cli
+from s7pymon.protocols import DataSource
 from s7pymon.web import S7WebServer
 
 
@@ -32,9 +33,9 @@ class TestBuildDemoEngine:
         engine, connection = build_demo_engine(poll_interval=0.01, seed=3)
         try:
             engine.connect()
-            first = connection.area_read(engine.variables[0].area, 0, 16, db=DEMO_DB).data
+            first = connection.read_source(DataSource.s7_db(DEMO_DB), 0, 16).data
             time.sleep(0.04)
-            second = connection.area_read(engine.variables[0].area, 0, 16, db=DEMO_DB).data
+            second = connection.read_source(DataSource.s7_db(DEMO_DB), 0, 16).data
             assert first != second
         finally:
             connection.close()

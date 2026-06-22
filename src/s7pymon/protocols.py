@@ -33,6 +33,8 @@ class ConnectionConfig:
     input_assembly: int = 101
     output_assembly: int = 100
     config_assembly: int = 102
+    input_size: int = 32
+    output_size: int = 32
     rpi_ms: int = 50
 
     @property
@@ -83,8 +85,7 @@ class DataSource:
 @dataclass
 class ReadResult:
     data: bytearray
-    area: str
-    db: int
+    source: DataSource
     start: int
     size: int
     timestamp: float = field(default_factory=time.monotonic)
@@ -123,11 +124,11 @@ class Connection(ABC):
         ...
 
     @abstractmethod
-    def area_read(self, area: str, start: int, size: int, db: int = 0) -> ReadResult:
+    def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         ...
 
     @abstractmethod
-    def area_write(self, area: str, offset: int, data: bytearray, db: int = 0) -> None:
+    def write_source(self, source: DataSource, offset: int, data: bytearray) -> None:
         ...
 
     def __enter__(self):

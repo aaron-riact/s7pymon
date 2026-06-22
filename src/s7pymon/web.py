@@ -444,6 +444,7 @@ def web_cli(
         poll_interval=runtime.poll_interval,
         write_mode=runtime.write_mode,
         logger=logger,
+        rules_engine=runtime.rules_engine,
     )
 
     try:

@@ -23,7 +23,7 @@ from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
 
-from .protocols import Connection, ConnectionState
+from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
 from .variable import S7Area, DataType, S7Variable, compute_read_range, extract_value
@@ -36,18 +36,14 @@ class PendingWrite:
     """Describes a write operation awaiting confirmation."""
 
     description: str  # Human-readable summary
-    area: str
-    db: int  # 0 for non-DB areas
+    source: DataSource
     offset: int
     data: bytearray
-    # For display purposes
-    detail: str = ""
+    detail: str = ""  # For display purposes
 
     @property
     def target_label(self) -> str:
-        if self.area == "DB":
-            return f"DB{self.db}"
-        return self.area
+        return str(self.source)
 
 
 class ConnectionStatus(Static):
@@ -339,7 +335,7 @@ class S7MonitorApp(App):
     def __init__(
         self,
         connection: Connection,
-        variables: list[S7Variable],
+        variables: list,
         read_groups: list[ReadGroup],
         poll_interval: float = 1.0,
         write_mode: WriteMode = WriteMode.DISABLED,
@@ -391,9 +387,8 @@ class S7MonitorApp(App):
         table.add_column("Raw Hex", key=self.COL_RAW_HEX)
 
         for var in self._variables:
-            area_label = f"DB{var.db}" if var.area == S7Area.DB else var.area.value
             table.add_row(
-                area_label,
+                str(var.source),
                 var.display_name,
                 var.type.value,
                 str(var.offset) + (f".{var.extra}" if var.type == DataType.BIT else ""),
@@ -480,11 +475,9 @@ class S7MonitorApp(App):
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
             self.call_from_thread(self._update_connection_state)
 
-    def _group_key_for_var(self, var: S7Variable) -> str:
+    def _group_key_for_var(self, var) -> str:
         """Get the read group key for a variable."""
-        if var.area == S7Area.DB:
-            return f"DB{var.db}"
-        return var.area.value
+        return str(var.source)
 
     def _on_data_received(self, results: dict[str, tuple[bytearray, int]]) -> None:
         """Process received data from all groups on the main thread."""
@@ -528,12 +521,11 @@ class S7MonitorApp(App):
 
                 # Log change to file
                 if changed and self._data_logger is not None:
-                    area_label = f"DB{var.db}" if var.area == S7Area.DB else var.area.value
                     self._data_logger.log(LogEntry(
                         timestamp=datetime.now(timezone.utc).isoformat(),
                         variable=var.display_name,
                         type=var.type.value,
-                        area=area_label,
+                        area=str(var.source),
                         offset=var.offset,
                         old_value=prev,
                         new_value=formatted,
@@ -604,15 +596,14 @@ class S7MonitorApp(App):
             if var.type == DataType.BIT:
                 if not isinstance(parsed, bool):
                     raise TypeError("Bit writes require a boolean value")
-                result = self._connection.area_read(var.area.value, var.offset, 1, db=var.db)
+                result = self._connection.read_source(var.source, var.offset, 1)
                 encoded = var.encode_bit(result.data[0], parsed)
             else:
                 encoded = var.encode(parsed)
 
             pending = PendingWrite(
                 description=f"Set {var.display_name} = {parsed}",
-                area=var.area.value,
-                db=var.db,
+                source=var.source,
                 offset=var.offset,
                 data=encoded,
                 detail=f"Variable: {var.spec} ({var.type.value})",
@@ -649,7 +640,7 @@ class S7MonitorApp(App):
         """Execute a confirmed write to the PLC."""
         log = self.query_one("#log-panel", RichLog)
         try:
-            self._connection.area_write(pending.area, pending.offset, pending.data, db=pending.db)
+            self._connection.write_source(pending.source, pending.offset, pending.data)
             hex_str = " ".join(f"{b:02X}" for b in pending.data)
             self.call_from_thread(log.write, f"[green]✓ {pending.description} [{hex_str}][/green]")
             self.call_from_thread(self._do_read)
@@ -703,8 +694,7 @@ class S7MonitorApp(App):
                 hex_bytes = bytearray(int(b, 16) for b in parts[3:])
                 pending = PendingWrite(
                     description=f"Raw write to DB{db} at offset {offset}",
-                    area="DB",
-                    db=db,
+                    source=DataSource.s7_db(db),
                     offset=offset,
                     data=hex_bytes,
                 )
@@ -722,15 +712,14 @@ class S7MonitorApp(App):
                 if var.type == DataType.BIT:
                     if not isinstance(parsed, bool):
                         raise TypeError("Bit writes require a boolean value")
-                    result = self._connection.area_read(var.area.value, var.offset, 1, db=var.db)
+                    result = self._connection.read_source(var.source, var.offset, 1)
                     encoded = var.encode_bit(result.data[0], parsed)
                 else:
                     encoded = var.encode(parsed)
 
                 pending = PendingWrite(
                     description=f"Set {var.spec} = {parsed}",
-                    area=var.area.value,
-                    db=var.db,
+                    source=var.source,
                     offset=var.offset,
                     data=encoded,
                     detail=f"Variable: {var.spec} ({var.type.value})",
@@ -745,7 +734,7 @@ class S7MonitorApp(App):
                 db = int(parts[1])
                 offset = int(parts[2])
                 size = int(parts[3])
-                result = self._connection.area_read("DB", offset, size, db=db)
+                result = self._connection.read_source(DataSource.s7_db(db), offset, size)
                 hex_str = " ".join(f"{b:02X}" for b in result.data)
                 self.call_from_thread(log.write, f"DB{db}[{offset}:{offset+size}]: {hex_str}")
             except Exception as e:

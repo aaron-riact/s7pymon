@@ -5,6 +5,7 @@ from s7pymon.variable import (
     S7Area,
     DataType,
     S7Variable,
+    EIPVariable,
     compute_read_range,
     extract_value,
 )
@@ -272,7 +273,7 @@ class TestComputeReadRange:
             S7Variable.parse("DB100.Byte0"),
             S7Variable.parse("DB200.Byte0"),
         ]
-        with pytest.raises(ValueError, match="multiple areas"):
+        with pytest.raises(ValueError, match="multiple sources"):
             compute_read_range(vars)
 
 
@@ -347,7 +348,7 @@ class TestS7AreaParsing:
             S7Variable.parse("DB100.Byte0"),
             S7Variable.parse("EB.Byte0"),
         ]
-        with pytest.raises(ValueError, match="multiple areas"):
+        with pytest.raises(ValueError, match="multiple sources"):
             compute_read_range(vars)
 
     def test_same_area_compute_read_range(self):
@@ -364,3 +365,90 @@ class TestS7AreaParsing:
         assert S7Area.AB.description == "Process Output"
         assert S7Area.MB.description == "Merker/Flag"
         assert S7Area.DB.description == "Data Block"
+
+
+class TestEIPVariableParsing:
+    def test_parse_eip_input_byte(self):
+        v = S7Variable.parse("EIP.Input.Byte0")
+        assert isinstance(v, EIPVariable)
+        assert v.assembly == "Input"
+        assert v.type == DataType.BYTE
+        assert v.offset == 0
+        assert v.extra is None
+        assert v.spec == "EIP.Input.Byte0"
+
+    def test_parse_eip_output_int(self):
+        v = S7Variable.parse("EIP.Output.Int4")
+        assert isinstance(v, EIPVariable)
+        assert v.assembly == "Output"
+        assert v.type == DataType.INT
+        assert v.offset == 4
+
+    def test_parse_eip_input_bit(self):
+        v = S7Variable.parse("EIP.Input.Bit2.3")
+        assert isinstance(v, EIPVariable)
+        assert v.assembly == "Input"
+        assert v.type == DataType.BIT
+        assert v.offset == 2
+        assert v.extra == 3
+
+    def test_parse_eip_input_real(self):
+        v = S7Variable.parse("EIP.Input.Real100")
+        assert isinstance(v, EIPVariable)
+        assert v.type == DataType.REAL
+        assert v.offset == 100
+
+    def test_parse_eip_case_insensitive(self):
+        v = S7Variable.parse("eip.input.byte0")
+        assert isinstance(v, EIPVariable)
+        assert v.assembly == "input"
+        assert v.type == DataType.BYTE
+
+    def test_parse_eip_with_label(self):
+        v = S7Variable.parse("EIP.Input.Byte0", label="heartbeat")
+        assert isinstance(v, EIPVariable)
+        assert v.display_name == "heartbeat"
+        assert v.spec == "EIP.Input.Byte0"
+
+    def test_eip_source_property(self):
+        v = S7Variable.parse("EIP.Input.Int4")
+        assert str(v.source) == "EIP.Input"
+
+    def test_eip_output_source_property(self):
+        v = S7Variable.parse("EIP.Output.Byte0")
+        assert str(v.source) == "EIP.Output"
+
+    def test_eip_decode_encode_byte(self):
+        v = S7Variable.parse("EIP.Input.Byte0")
+        assert v.decode(b"\x2A") == 42
+        assert v.encode(42) == bytearray(b"\x2A")
+
+    def test_eip_decode_encode_int(self):
+        v = S7Variable.parse("EIP.Input.Int4")
+        assert v.decode(b"\x00\x2A") == 42
+        assert v.encode(42) == bytearray(b"\x00\x2A")
+
+    def test_eip_bit_read_modify_write(self):
+        v = S7Variable.parse("EIP.Input.Bit0.3")
+        assert v.decode(b"\x08") is True
+        assert v.decode(b"\x00") is False
+        assert v.encode_bit(0x00, True) == bytearray(b"\x08")
+        assert v.encode_bit(0x08, False) == bytearray(b"\x00")
+
+    def test_eip_format_value(self):
+        v = S7Variable.parse("EIP.Input.Real8")
+        assert v.format_value(3.1415) == "3.1415"
+        assert v.format_value(True) == "1.0000"  # coerced to float
+
+    def test_eip_parse_input(self):
+        v = S7Variable.parse("EIP.Input.Byte0")
+        assert v.parse_input("0xFF") == 255
+        assert v.parse_input("42") == 42
+
+    def test_eip_invalid_spec_raises(self):
+        with pytest.raises(ValueError, match="Invalid variable spec"):
+            S7Variable.parse("EIP.Invalid.Byte0")
+
+    def test_eip_missing_bit_number_raises(self):
+        with pytest.raises(ValueError, match="requires bit number"):
+            S7Variable.parse("EIP.Input.Bit0")
