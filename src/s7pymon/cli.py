@@ -408,6 +408,7 @@ def main(
         write_mode=runtime.write_mode,
         log_file=runtime.log_file,
         log_format=runtime.log_format,
+        rules_engine=runtime.rules_engine,
     )
     app.run()
 
