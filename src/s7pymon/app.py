@@ -26,6 +26,7 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, St
 from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
+from .rules import RulesEngine
 from .variable import DataType, Variable, compute_read_range, extract_value
 
 __all__ = ["S7MonitorApp", "WriteMode", "format_hex_dump", "ReadGroup"]
@@ -341,6 +342,7 @@ class S7MonitorApp(App):
         write_mode: WriteMode = WriteMode.DISABLED,
         log_file: str | None = None,
         log_format: LogFormat = LogFormat.CSV,
+        rules_engine: RulesEngine | None = None,
     ):
         super().__init__()
         self._connection = connection
@@ -350,6 +352,7 @@ class S7MonitorApp(App):
         self.write_mode = write_mode
         self._log_file = log_file
         self._log_format = log_format
+        self._rules_engine = rules_engine
         self._data_logger: DataLogger | None = None
         self._current_data: dict[str, tuple[bytearray, int]] = {}  # keyed by group label
         self._current_values: dict[str, str] = {}
@@ -469,11 +472,36 @@ class S7MonitorApp(App):
             for group in self._read_groups:
                 result = self._connection.read_source(group.source, group.start, group.size)
                 results[group.key] = (result.data, group.start)
+
+            if self._rules_engine is not None:
+                self._apply_rules(results)
+
             self.call_from_thread(self._on_data_received, results)
         except Exception as e:
             log = self.query_one("#log-panel", RichLog)
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
             self.call_from_thread(self._update_connection_state)
+
+    def _apply_rules(self, buffers: dict[str, tuple[bytearray, int]]) -> None:
+        """Decode current values from buffers and run rules (worker thread)."""
+        current_values: dict[str, str] = {}
+        for var in self._variables:
+            key = str(var.source)
+            entry = buffers.get(key)
+            if entry is None:
+                continue
+            data, data_start = entry
+            try:
+                value = extract_value(var, data, data_start)
+                current_values[var.spec] = var.format_value(value)
+            except Exception:
+                pass
+        self._rules_engine.apply(self._connection, current_values)
+
+    def trigger_pulse(self, target: str) -> None:
+        if self._rules_engine is None:
+            raise KeyError(f"No pulse rule for {target!r} (no rules configured)")
+        self._rules_engine.trigger_pulse(target)
 
     def _group_key_for_var(self, var) -> str:
         """Get the read group key for a variable."""
