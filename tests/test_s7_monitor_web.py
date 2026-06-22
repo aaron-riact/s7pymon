@@ -8,8 +8,8 @@ import urllib.request
 
 import pytest
 
-from s7pymon.protocols import ConnectionConfig, ConnectionState, ReadResult
-from s7pymon.engine import MonitorEngine, WriteMode
+from s7pymon.protocols import ConnectionConfig, ConnectionState, DataSource, ReadResult
+from s7pymon.engine import MonitorEngine, ReadGroup, WriteMode
 from s7pymon.variable import S7Area, S7Variable
 from s7pymon.web import Broadcaster, S7WebServer
 
@@ -45,16 +45,6 @@ class FakeConnection:
         buf[offset:offset + len(data)] = data
 
 
-class Grp:
-    def __init__(self, area, db, start, size):
-        self.area, self.db, self.start, self.size = area, db, start, size
-        self.label = f"DB{db}" if area == S7Area.DB else area.value
-
-    @property
-    def key(self):
-        return self.label
-
-
 @pytest.fixture
 def server():
     buffers = {(S7Area.DB, 210): bytearray([0x2A] + [0] * 15)}
@@ -62,7 +52,7 @@ def server():
     engine = MonitorEngine(
         conn,
         [S7Variable.parse("DB210.Byte0", label="answer")],
-        [Grp(S7Area.DB, 210, 0, 16)],
+        [ReadGroup(DataSource.s7_db(210), start=0, size=16)],
         poll_interval=0.05,
         write_mode=WriteMode.DISABLED,
     )

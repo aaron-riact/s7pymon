@@ -48,6 +48,38 @@ class ConnectionConfig:
         return f"{self.address}:{self.tcp_port}"
 
 
+@dataclass(frozen=True)
+class DataSource:
+    """Identifies a readable/writable data source (DB, assembly, …).
+
+    Each protocol connection parses the :attr:`value` string internally.
+    Factory methods provide protocol-specific construction:
+
+    >>> DataSource.s7_db(210)
+    DataSource('DB210')
+    >>> DataSource.eip("Input")
+    DataSource('EIP.Input')
+    >>> DataSource.s7_area("EB")
+    DataSource('EB')
+    """
+    value: str
+
+    def __str__(self) -> str:
+        return self.value
+
+    @staticmethod
+    def s7_db(number: int) -> DataSource:
+        return DataSource(f"DB{number}")
+
+    @staticmethod
+    def s7_area(area: str) -> DataSource:
+        return DataSource(area)
+
+    @staticmethod
+    def eip(name: str) -> DataSource:
+        return DataSource(f"EIP.{name}")
+
+
 @dataclass
 class ReadResult:
     data: bytearray

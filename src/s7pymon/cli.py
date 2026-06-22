@@ -37,7 +37,7 @@ from .config import S7MonitorConfig
 from .connection import S7Connection
 from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
-from .protocols import Connection, ConnectionConfig
+from .protocols import Connection, ConnectionConfig, DataSource
 from .variable import S7Area, DataType, S7Variable, compute_read_range
 
 
@@ -64,18 +64,31 @@ def build_default_variables(db: int, start: int, size: int) -> list[S7Variable]:
 
 
 def build_read_groups(variables: list[S7Variable]) -> list[ReadGroup]:
-    """Group variables by area+db and compute read ranges for each group."""
-    # Group by (area, db)
-    groups: dict[tuple[S7Area, int], list[S7Variable]] = defaultdict(list)
+    """Group variables by source and compute one read range per group."""
+    groups: dict[DataSource, list[S7Variable]] = defaultdict(list)
     for var in variables:
-        groups[(var.area, var.db)].append(var)
+        groups[s7_source(var)].append(var)
 
     read_groups = []
-    for (area, db), group_vars in groups.items():
+    for source, group_vars in groups.items():
         start, size = compute_read_range(group_vars)
-        read_groups.append(ReadGroup(area=area, db=db, start=start, size=size))
+        read_groups.append(ReadGroup(source, start, size, label=_s7_group_label(group_vars[0])))
 
     return read_groups
+
+
+def s7_source(var: S7Variable) -> DataSource:
+    """The data source an S7 variable is read from: its DB, or its area."""
+    if var.area == S7Area.DB:
+        return DataSource.s7_db(var.db)
+    return DataSource.s7_area(var.area.value)
+
+
+def _s7_group_label(var: S7Variable) -> str:
+    """Hex dump heading: ``DB210``, or ``EB (Process Input)`` for an area."""
+    if var.area == S7Area.DB:
+        return f"DB{var.db}"
+    return f"{var.area.value} ({var.area.description})"
 
 
 class RuntimeConfigError(ValueError):
@@ -144,8 +157,12 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
 
         if cfg.size is not None:
             db_start_val = cfg.start if cfg.start is not None else 0
+            if cfg.db is not None:
+                wanted = {DataSource.s7_db(cfg.db)}
+            else:
+                wanted = {s7_source(v) for v in parsed_vars if v.area == S7Area.DB}
             for group in read_groups:
-                if group.area == S7Area.DB and (cfg.db is None or group.db == cfg.db):
+                if group.source in wanted:
                     group.size = max(group.size, cfg.size)
                     group.start = min(group.start, db_start_val)
 

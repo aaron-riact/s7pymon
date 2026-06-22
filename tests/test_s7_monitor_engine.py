@@ -7,13 +7,13 @@ import pytest
 from s7pymon.connection import ConnectionConfig, ConnectionState, ReadResult, S7Connection
 from s7pymon.engine import (
     MonitorEngine,
+    ReadGroup,
     Snapshot,
     WriteBlockedError,
     WriteMode,
-    area_label,
     format_hex_dump,
-    group_key,
 )
+from s7pymon.protocols import DataSource
 from s7pymon.variable import S7Area, DataType, S7Variable
 
 
@@ -57,41 +57,16 @@ class FakeConnection:
         buf[offset : offset + len(data)] = data
 
 
-class Grp:
-    """Lightweight ReadGroup stand-in (engine only needs these attributes)."""
-
-    def __init__(self, area, db, start, size, label=None):
-        self.area = area
-        self.db = db
-        self.start = start
-        self.size = size
-        self.label = label or area_label(area, db)
-
-    @property
-    def key(self):
-        return group_key(self.area, self.db)
-
-
 def make_engine(buffers, variables, **kw):
     conn = FakeConnection(buffers)
     groups = kw.pop("groups", None)
     if groups is None:
         # one DB group covering 0..16 by default
-        groups = [Grp(S7Area.DB, 210, 0, 16)]
+        groups = [ReadGroup(DataSource.s7_db(210), start=0, size=16)]
     return MonitorEngine(conn, variables, groups, **kw), conn
 
 
 class TestHelpers:
-    def test_area_label_db(self):
-        assert area_label(S7Area.DB, 210) == "DB210"
-
-    def test_area_label_non_db(self):
-        assert area_label(S7Area.EB, 0) == "EB"
-
-    def test_group_key_matches_label(self):
-        assert group_key(S7Area.DB, 5) == "DB5"
-        assert group_key(S7Area.MB, 0) == "MB"
-
     def test_format_hex_dump_reexported(self):
         out = format_hex_dump(bytearray([0x41]))
         assert "0000" in out and "41" in out
@@ -160,7 +135,8 @@ class TestPoll:
                 (S7Area.EB, 0): bytearray([0x22] + [0] * 15),
             },
             [db_var, eb_var],
-            groups=[Grp(S7Area.DB, 210, 0, 16), Grp(S7Area.EB, 0, 0, 16)],
+            groups=[ReadGroup(DataSource.s7_db(210), start=0, size=16),
+                    ReadGroup(DataSource.s7_area("EB"), start=0, size=16)],
         )
         snap = engine.poll()
         values = {r.spec: r.value for r in snap.readings}
@@ -212,14 +188,14 @@ class TestWrite:
 
     def test_write_spec_unmonitored(self):
         engine, conn = make_engine({(S7Area.DB, 5): bytearray(16)}, [],
-                                   groups=[Grp(S7Area.DB, 5, 0, 16)],
+                                   groups=[ReadGroup(DataSource.s7_db(5), start=0, size=16)],
                                    write_mode=WriteMode.ALLOWED)
         engine.write_spec("DB5.Byte2", "9")
         assert conn.writes[-1] == ("DB", 2, b"\x09", 5)
 
     def test_write_raw(self):
         engine, conn = make_engine({(S7Area.DB, 7): bytearray(16)}, [],
-                                   groups=[Grp(S7Area.DB, 7, 0, 16)],
+                                   groups=[ReadGroup(DataSource.s7_db(7), start=0, size=16)],
                                    write_mode=WriteMode.ALLOWED)
         res = engine.write_raw(7, 1, bytearray([0xFF, 0x01]))
         assert conn.writes[-1] == ("DB", 1, b"\xff\x01", 7)

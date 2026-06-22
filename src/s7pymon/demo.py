@@ -16,7 +16,7 @@ import threading
 import click
 
 from .engine import MonitorEngine, ReadGroup, WriteMode
-from .protocols import Connection, ConnectionConfig, ConnectionState, ReadResult
+from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
 from .variable import S7Area, S7Variable
 from .web import S7WebServer
 
@@ -159,7 +159,7 @@ def build_demo_engine(
     engine = MonitorEngine(
         connection=connection,
         variables=variables,
-        read_groups=[ReadGroup(area=S7Area.DB, db=DEMO_DB, start=0, size=16)],
+        read_groups=[ReadGroup(DataSource.s7_db(DEMO_DB), start=0, size=16)],
         poll_interval=poll_interval,
         write_mode=write_mode,
     )

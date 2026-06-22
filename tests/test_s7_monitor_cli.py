@@ -8,6 +8,7 @@ from s7pymon.cli import (
     main,
     parse_variable_arg,
 )
+from s7pymon.protocols import DataSource
 from s7pymon.variable import S7Area, DataType, S7Variable
 
 
@@ -64,8 +65,8 @@ class TestBuildReadGroups:
         ]
         groups = build_read_groups(vars)
         assert len(groups) == 1
-        assert groups[0].area == S7Area.DB
-        assert groups[0].db == 210
+        assert groups[0].source == DataSource.s7_db(210)
+        assert groups[0].label == "DB210"
         assert groups[0].start == 0
         assert groups[0].size == 6
 
@@ -76,8 +77,9 @@ class TestBuildReadGroups:
         ]
         groups = build_read_groups(vars)
         assert len(groups) == 2
-        areas = {g.area for g in groups}
-        assert areas == {S7Area.DB, S7Area.EB}
+        assert {str(g.source) for g in groups} == {"DB210", "EB"}
+        labels = {g.label for g in groups}
+        assert labels == {"DB210", "EB (Process Input)"}
 
     def test_multiple_dbs(self):
         vars = [
