@@ -1,27 +1,37 @@
-# s7pymon — S7 PLC Monitor TUI
+# s7pymon — Live industrial protocol monitor (S7 + EtherNet/IP)
 
-A modern terminal UI for live-monitoring and writing Siemens S7 PLC data.
-Built with **Textual** + **python-snap7**.
+A modern terminal UI and web dashboard for live-monitoring and writing
+industrial controller data. Supports **Siemens S7** (via python-snap7) and
+**EtherNet/IP** (via python-ethernetip) protocols.
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue)
 
 ## Features
 
 - **Live hex dump** + decoded variable table, refreshed at a configurable interval
-- **Multi-area monitoring** — DB, EB (inputs), AB (outputs), MB (merkers), CT (counters), TM (timers)
+- **Multi-area monitoring** — DB, EB (inputs), AB (outputs), MB (merkers), CT (counters), TM (timers), EIP assemblies
 - **Named variables** — label any address with `:name` syntax
 - **Write with confirmation** — edit values, toggle bits, or use the command bar; all writes require explicit confirmation
+- **Output rules** — Follow (copy input to output), Toggle (heartbeat), Pulse (one-shot) for automatic assembly management
 - **Keyboard-driven** — no mouse needed
 - **Web dashboard** — an ultra-modern browser UI streaming live data over Server-Sent Events (`s7pymon-web`), with zero extra dependencies
 - **Built-in demo** — launch the full browser dashboard with synthetic live PLC data using `s7pymon-demo`
+- **Cross-protocol** — monitor S7 DBs and EIP assemblies side-by-side; Follow rules can copy between protocols
 
 ## Requirements
 
 ```
+# S7 mode
 python-snap7 >= 2.0
+
+# EIP mode (optional)
+ethernetip >= 1.1.2
+
+# Both modes
 textual >= 3.0
 rich >= 13.0
 click >= 8.0
+pyyaml >= 6.0
 ```
 
 ## Installation
@@ -95,18 +105,120 @@ s7pymon 192.168.1.100 --rack 0 --slot 2 --port 1102 --interval 0.25 DB210.Byte0
 | `Bit` | 1 byte | Requires bit number: `Bit0.3` = byte 0, bit 3 |
 | `String` | N+2 bytes | Requires max length: `String0.32` |
 
+### EtherNet/IP variable spec
+
+```
+EIP.<Assembly>.<Type><Offset>[.<Extra>][:Label]
+```
+
+Where `<Assembly>` is `Input`, `Output`, or `Config`.
+
+| Example | Description |
+|---------|-------------|
+| `EIP.Input.Byte0:heartbeat` | Input assembly byte 0, labelled "heartbeat" |
+| `EIP.Input.Int4:temperature` | Input assembly, signed 16-bit int at offset 4 |
+| `EIP.Output.DWord8:setpoint` | Output assembly, unsigned 32-bit at offset 8 |
+| `EIP.Input.Bit0.3:limit_switch` | Input assembly, bit 3 of byte 0 |
+| `EIP.Output.Bit0.0:watchdog` | Output assembly, bit 0 of byte 0 |
+
+### Config files
+
+Connection settings and variables can be stored in a YAML config file and
+shared between the TUI and web dashboard.
+
+**S7 example** (`monitor.yaml`):
+
+```yaml
+address: 192.168.1.100
+rack: 0
+slot: 2
+port: 102
+interval: 0.5
+write_mode: confirm
+variables:
+  - DB210.Byte0:heartbeat
+  - DB210.Byte1:status
+  - DB210.Bit1.0:e_stop
+  - EB.Byte0:input0
+```
+
+**EIP example** (`eip-monitor.yaml`):
+
+```yaml
+protocol: eip
+address: 192.168.1.200
+interval: 0.05               # 50 ms for fast I/O
+output_assembly: 100
+input_assembly: 101
+input_size: 32
+output_size: 32
+rpi_ms: 50
+variables:
+  - EIP.Input.Byte0:heartbeat
+  - EIP.Input.Int4:temperature
+  - EIP.Output.DWord8:setpoint
+```
+
+Usage:
+
+```bash
+s7pymon -c monitor.yaml
+s7pymon-web -c eip-monitor.yaml --open
+```
+
+### Output rules
+
+Output rules run automatically on every poll cycle. They are configured in the
+YAML config file under a `rules:` key that maps target variables to rule
+definitions.
+
+| Rule | Behaviour | Example |
+|------|-----------|---------|
+| **follow** | Copy a source variable's value to the target each cycle | `target: { follow: source }` |
+| **toggle** | Alternate a bit every N cycles (heartbeat/watchdog) | `target: { toggle: 2 }` |
+| **pulse** | Set a bit high for N cycles when triggered | `target: { pulse: 5 }` |
+
+Cross-protocol follow is supported — source and target can be on different
+assemblies or protocols (e.g. S7 DB → EIP output).
+
+**Example** with rules:
+
+```yaml
+protocol: eip
+address: 192.168.1.200
+variables:
+  - EIP.Input.Byte0:heartbeat
+  - EIP.Output.Byte0:output0
+  - EIP.Output.Bit0.0:watchdog
+rules:
+  # Copy input byte 0 to output byte 0 every cycle
+  EIP.Output.Byte0:
+    follow: EIP.Input.Byte0
+  # Toggle bit 0 of output byte 0 every 2 cycles (heartbeat)
+  EIP.Output.Bit0.0:
+    toggle: 2
+```
+
+Manual pulse is available via the command bar:
+
+```
+pulse EIP.Output.Bit0.0   # trigger a pulse rule for 1 cycle
+pulse EIP.Output.Bit0.0 5 # trigger a pulse rule for 5 cycles
+```
+
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-r`, `--rack` | `0` | Rack number |
-| `-s`, `--slot` | `2` | Slot number |
-| `-p`, `--port` | `102` | TCP port |
+| `-c`, `--config` | — | YAML config file path |
+| `-r`, `--rack` | `0` | Rack number (S7) |
+| `-s`, `--slot` | `2` | Slot number (S7) |
+| `-p`, `--port` | `102` (S7) / `44818` (EIP) | TCP port |
 | `-t`, `--timeout` | `3000` | Connection timeout (ms) |
 | `-i`, `--interval` | `1.0` | Poll interval (seconds) |
-| `--db` | — | DB number for raw range mode |
-| `--start` | `0` | Start offset for raw range mode |
-| `--size` | — | Byte count for raw range mode |
+| `--db` | — | DB number for raw range mode (S7) |
+| `--start` | `0` | Start offset for raw range mode (S7) |
+| `--size` | — | Byte count for raw range mode (S7) |
 
 ## Keyboard shortcuts
 
@@ -125,9 +237,10 @@ s7pymon 192.168.1.100 --rack 0 --slot 2 --port 1102 --interval 0.25 DB210.Byte0
 Press `:` to open the command bar. Supported commands:
 
 ```
-write <var> <value>   — Write a value (e.g. write DB210.Byte0 42)
-set <var> <value>     — Alias for write
-read                  — Force a read cycle
+write <var> <value>      — Write a value (e.g. write DB210.Byte0 42)
+set <var> <value>        — Alias for write
+read                     — Force a read cycle
+pulse <target> [cycles]  — Trigger a pulse rule (default 1 cycle)
 ```
 
 All write operations pop up a confirmation dialog showing the exact bytes
@@ -194,7 +307,7 @@ exactly as they do for the TUI.
 | `GET` | `/api/state` | One-shot snapshot + variable/connection description |
 | `GET` | `/api/stream` | Server-Sent Events live feed of poll/status snapshots |
 | `POST` | `/api/write` | Write a variable (`{spec, value}` or raw bytes) |
-| `POST` | `/api/control` | `pause` / `resume` / `reconnect` / `write_mode` |
+| `POST` | `/api/control` | `pause` / `resume` / `reconnect` / `write_mode` / `pulse` |
 
 Writes honour the active **write mode**: when writes are disabled the server
 returns `403`; the dashboard's native `<dialog>` acts as the confirmation step.

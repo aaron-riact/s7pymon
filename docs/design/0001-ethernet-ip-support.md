@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft — pending implementation.
+Implemented (June 2026) — see §8 for reality vs. plan.
 
 ## Summary
 
@@ -326,8 +326,181 @@ Each commit is a small, testable unit.
   The design assumes only `connect(address, port)`, `forward_open(...)`,
   `read_assembly(n)`, `write_assembly(n, data)`, `forward_close()` — a ~200
   line wrapper, not a full library.
+  **Resolution**: Used Sebastian Block's `ethernetip` library (v1.1.2) which
+  provides scanner-mode UDP I/O with background threads and bit-list buffers.
+  `EIPConnection` wraps it behind the `Connection` ABC's byte-oriented
+  `read_source`/`write_source` interface. Available locally at
+  `/home/aaron/development/aaron/ethernetip-stuff/python-ethernetip`.
 - **RPI vs. polled reads**: If using UDP I/O, data arrives asynchronously.
   For simplicity, v1 can use polled explicit messaging (read assembly on
   demand) — 50ms poll gives similar behaviour without the async complexity.
   Native UDP I/O can be a future optimisation.
+  **Resolution**: The `ethernetip` library uses UDP I/O with background
+  threads. `EIPConnection.read_source`/`write_source` work with the library's
+  byte-buffer API (`input_bits`/`output_bits`). The polling pattern is the
+  same as S7 — the engine's `poll()` loop reads assemblies synchronously.
+  RPI is configured at connection time via `ConnectionConfig.rpi_ms`.
 - **Multiple adapters**: Not in scope for v1. One adapter per process.
+
+---
+
+## 8. Reality vs. Plan
+
+This section documents where the implementation deviated from the design
+document, why, and what the implications are if we ever want to bring things
+back inline with the original plan.
+
+### 8.1 Connection abstraction
+
+| Design | Reality |
+|--------|---------|
+| `read_groups()` → `dict` | `read_source(source, offset, size)` → `ReadResult` |
+| `write_assembly(target, data)` | `write_source(source, offset, data)` |
+
+**Why**: The design proposed protocol-level methods (`read_groups`,
+`write_assembly`) but during implementation it became simpler to expose
+byte-range `read_source`/`write_source` — same granularity as S7's
+`area_read`/`area_write`. This maps naturally to both protocols (S7 reads a DB
+range, EIP reads a slice of an assembly buffer) and lets the engine and
+frontends stay completely protocol-agnostic.
+
+**Implication**: If we want `write_assembly` (writing an entire assembly in one
+shot for EIP atomicity), we can add it as an optional optimisation — the
+`EIPConnection` already buffers the full assembly internally via
+`_output_buffer`.
+
+### 8.2 Variable spec
+
+| Design | Reality |
+|--------|---------|
+| Universal `Variable` dataclass replacing both S7 & EIP | `S7Variable` and `EIPVariable` are separate frozen dataclasses |
+
+**Why**: The two types have different fields (`S7Variable` has `area`/`db`,
+`EIPVariable` has `assembly`). Forcing a single class would require either a
+union type for `area`/`db`/`assembly` or a generic `protocol` + `source` string
+approach. Keeping them separate gives clear type-checking and no ambiguity.
+Both implement the same interface (`.source`, `.decode()`, `.encode()`,
+`.parse_input()`, `.format_value()`), so the engine never needs to know which
+type it's holding — it just calls `var.source`, `var.decode(bytes)`, etc.
+
+**Implication**: Code that explicitly branches on `isinstance(v, S7Variable)`
+needs updating when adding a new protocol. In practice the engine and frontends
+never do this — they use the interface. The only place that branches is
+`build_read_groups` where we check `hasattr(first, "area")` to preserve the S7
+specific fields on `ReadGroup`.
+
+### 8.3 Output rules — config format
+
+| Design | Reality |
+|--------|---------|
+| `output_rules` list with `target` field + type-specific keys | `rules` dict keyed by target spec |
+| `invert: true` | Not implemented |
+| `toggle_ms: 500` → timer-based | `toggle: 2` → cycle-count-based |
+| `pulse: source` → edge-triggered | `pulse: 5` → manual-trigger, duration in cycles |
+| `edge: rising` | Not implemented |
+
+**Why**: The list-of-dicts format requires iterating to find a rule by target;
+the dict-keyed format (`rules: { target: { follow: source } }`) is a simpler
+YAML structure and makes target-lookup O(1). Invert/edge/scale were deferred
+to keep the first pass small. Toggle and pulse use poll-cycle counts instead
+of wall-clock milliseconds because (a) the engine doesn't own a timer,
+(b) cycle-count is deterministic across poll-interval changes, and (c) it keeps
+the rules engine stateless with respect to real time.
+
+**Implication**: To add `invert`, `edge`, `scale`, `toggle_ms`, `duration_ms`
+later, the rule dataclasses gain new fields with `None` defaults (backward
+compat). The YAML parser in `build_rules_engine()` would check for the new
+keys. Timer-based pulse would require threading or `asyncio` — the current
+cycle-count approach is simpler and adequate for typical short pulses (1–5
+cycles).
+
+### 8.4 Pulse trigger
+
+| Design | Reality |
+|--------|---------|
+| Edge-triggered on source bit + manual command | Manual trigger only (`trigger_pulse(target)`) |
+
+**Why**: Edge detection requires maintaining previous-source-value state and
+a timer deadline. The manual-trigger approach (called programmatically via
+`trigger_pulse()` or potentially from a command-bar `pulse` command) covers
+the primary use case — one-shot output pulses — without the complexity of
+per-source edge tracking.
+
+**Implication**: Adding source-edge triggering later means maintaining a
+`_previous_source: dict[str, bool]` in `RulesEngine` and calling trigger_pulse
+on rising/falling edges detected during `_apply_follow`-style value reads.
+
+### 8.5 Rule target exclusivity
+
+| Design | Reality |
+|--------|---------|
+| Rules have exclusive ownership of their target; manual writes blocked | No exclusivity enforcement |
+
+**Why**: Enforcing exclusivity requires tracking which specs are rule-owned and
+checking every write, which adds coupling between the rule engine and the write
+path. The first pass trusts the user not to configure conflicting rules.
+
+**Implication**: To add exclusivity, store a `set[str]` of owned targets on the
+`RulesEngine`, check it in `MonitorEngine._write()` and the TUI's write path,
+and raise a clear error like `Cannot write to {spec}: it is managed by an
+output rule ({rule_type})`.
+
+### 8.6 CLI `--protocol` flag
+
+| Design | Reality |
+|--------|---------|
+| `--protocol`, `--input-assembly`, `--output-assembly`, `--rpi` CLI flags | Config-file only |
+
+**Why**: The CLI command already has 15+ options; adding EIP flags would add
+another 6. EIP is expected to be configured via YAML files (which support
+comments, rules, and assembly mappings). The `--protocol` flag can be added
+when a user requests it.
+
+**Implication**: Adding CLI flags later requires updating `load_merged_config`,
+`main()` and `web_cli()` click decorators, and the `merge_cli` method on
+`S7MonitorConfig`. The config-file path already works end-to-end.
+
+### 8.7 ReadGroup
+
+The original design didn't anticipate `ReadGroup` needing EIP support. The
+dataclass was S7-specific (`area: S7Area`, `db: int`). In the implementation
+we added an optional `_source: DataSource | None` field; when set it overrides
+`area`/`db` for the `source`, `key`, and `label` properties. This is backward
+compatible — all existing S7 code creates `ReadGroup(area=..., db=...)` which
+leaves `_source=None`.
+
+### 8.8 What was built extra
+
+- **DataSource frozen dataclass** — Not in the original design. Provides a
+  type-safe identifier (`DataSource("DB210")`, `DataSource("EIP.Input")`) with
+  protocol-specific factory methods. The engine keys decode groups and variables
+  by `str(var.source)` instead of protocol-specific labels, making it
+  naturally protocol-agnostic.
+
+- **EIPVariable as a separate class** — See §8.2 above.
+
+- **RulesEngine as an injected dependency** — `MonitorEngine` and
+  `S7MonitorApp` accept `rules_engine: RulesEngine | None = None` instead of
+  the engine owning the rules. This lets tests inject a mock, or users run
+  rules-free.
+
+- **`_source` field on ReadGroup** — See §8.7 above.
+
+### 8.9 Current test coverage
+
+All tests pass: **253 tests**, covering:
+
+| Area | Tests |
+|------|-------|
+| S7 variable parsing | 65 |
+| EIP variable parsing | 15 |
+| EIP connection (mock library) | 29 |
+| Engine (poll, write, groups) | 21 |
+| Rules engine (follow/toggle/pulse) | 16 |
+| Config (YAML + merge) | 14 |
+| CLI (parse, build_read_groups) | 19 |
+| Web (SSE, write, control) | 18 |
+| Demo, replay, logging, runtime | rest |
+
+Missing: end-to-end integration tests with real or simulated hardware for both
+S7 and EIP.
