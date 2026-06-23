@@ -7,7 +7,9 @@ so :class:`MonitorEngine` can poll EIP assemblies as ``DataSource`` values.
 from __future__ import annotations
 
 import re
+import sys
 import threading
+import traceback
 
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
 
@@ -98,6 +100,9 @@ class EIPConnection(Connection):
                 self._error = "ethernetip library not available"
                 raise ConnectionError("ethernetip library not available") from None
             except Exception as e:
+                tb = traceback.format_exc()
+                print(f"\n[ERROR] EIP connection failed: {e}", file=sys.stderr, flush=True)
+                print(tb, file=sys.stderr, flush=True)
                 self._state = ConnectionState.ERROR
                 self._error = str(e)
                 self._cleanup()

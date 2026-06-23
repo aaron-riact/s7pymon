@@ -9,7 +9,9 @@ A Textual-based TUI application inspired by Sharp7.Monitor that provides:
 
 from __future__ import annotations
 
+import sys
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Union
@@ -443,6 +445,8 @@ class S7MonitorApp(App):
                 self.call_from_thread(self._update_connection_state)
                 self.call_from_thread(log.write, f"[green]Connected to {self._connection.config.display}[/green]")
             except Exception as e:
+                print(f"\n[ERROR] Connection failed: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self.call_from_thread(self._update_connection_state)
                 self.call_from_thread(log.write, f"[red]Connection failed: {e}[/red]")
                 return
@@ -478,6 +482,8 @@ class S7MonitorApp(App):
 
             self.call_from_thread(self._on_data_received, results)
         except Exception as e:
+            print(f"\n[ERROR] Read failed: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             log = self.query_one("#log-panel", RichLog)
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
             self.call_from_thread(self._update_connection_state)
@@ -638,6 +644,8 @@ class S7MonitorApp(App):
             )
             self.call_from_thread(self._confirm_and_write, pending)
         except Exception as e:
+            print(f"\n[ERROR] Encode failed for {var.display_name}: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             self.call_from_thread(log.write, f"[red]Encode failed for {var.display_name}: {e}[/red]")
 
     def _confirm_and_write(self, pending: PendingWrite) -> None:
@@ -673,6 +681,8 @@ class S7MonitorApp(App):
             self.call_from_thread(log.write, f"[green]✓ {pending.description} [{hex_str}][/green]")
             self.call_from_thread(self._do_read)
         except Exception as e:
+            print(f"\n[ERROR] Write failed: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             self.call_from_thread(log.write, f"[red]Write failed: {e}[/red]")
 
     def action_toggle_bit(self) -> None:
@@ -728,6 +738,8 @@ class S7MonitorApp(App):
                 )
                 self.call_from_thread(self._confirm_and_write, pending)
             except Exception as e:
+                print(f"\n[ERROR] Write command failed: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self.call_from_thread(log.write, f"[red]Write command parse error: {e}[/red]")
 
         elif command == "set" and len(parts) >= 3:
@@ -754,6 +766,8 @@ class S7MonitorApp(App):
                 )
                 self.call_from_thread(self._confirm_and_write, pending)
             except Exception as e:
+                print(f"\n[ERROR] Set command failed: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self.call_from_thread(log.write, f"[red]Set command failed: {e}[/red]")
 
         elif command == "read" and len(parts) >= 4:
@@ -766,6 +780,8 @@ class S7MonitorApp(App):
                 hex_str = " ".join(f"{b:02X}" for b in result.data)
                 self.call_from_thread(log.write, f"DB{db}[{offset}:{offset+size}]: {hex_str}")
             except Exception as e:
+                print(f"\n[ERROR] Read command failed: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self.call_from_thread(log.write, f"[red]Read command failed: {e}[/red]")
 
         else:

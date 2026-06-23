@@ -7,6 +7,8 @@ DB, EB, AB, MB, CT, and TM areas, with connection state tracking.
 from __future__ import annotations
 
 import re
+import sys
+import traceback
 from threading import Lock
 from typing import Protocol
 
@@ -104,6 +106,8 @@ class S7Connection(Connection):
                     raise ConnectionError("connect() returned but get_connected() is False")
                 self._state = ConnectionState.CONNECTED
             except Exception as e:
+                print(f"\n[ERROR] S7 connection failed to {self._config.address}:{self._config.tcp_port}: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self._state = ConnectionState.ERROR
                 self._error = str(e)
                 raise
@@ -146,6 +150,8 @@ class S7Connection(Connection):
                     size=size,
                 )
             except Exception as e:
+                print(f"\n[ERROR] S7 read failed for {source}: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self._state = ConnectionState.ERROR
                 self._error = str(e)
                 raise
@@ -172,6 +178,8 @@ class S7Connection(Connection):
                 else:
                     raise ValueError(f"Unsupported S7 area: {area}")
             except Exception as e:
+                print(f"\n[ERROR] S7 write failed for {source}: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 self._state = ConnectionState.ERROR
                 self._error = str(e)
                 raise
