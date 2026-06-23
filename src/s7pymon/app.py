@@ -444,7 +444,6 @@ class S7MonitorApp(App):
                 self.call_from_thread(self._update_connection_state)
                 self.call_from_thread(log.write, f"[green]Connected to {self._connection.config.display}[/green]")
             except Exception as e:
-                log_error(f"Connection failed: {e}")
                 self.call_from_thread(self._update_connection_state)
                 self.call_from_thread(log.write, f"[red]Connection failed: {e}[/red]")
                 return
@@ -480,7 +479,6 @@ class S7MonitorApp(App):
 
             self.call_from_thread(self._on_data_received, results)
         except Exception as e:
-            log_error(f"Read failed: {e}")
             log = self.query_one("#log-panel", RichLog)
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
             self.call_from_thread(self._update_connection_state)
@@ -677,7 +675,6 @@ class S7MonitorApp(App):
             self.call_from_thread(log.write, f"[green]✓ {pending.description} [{hex_str}][/green]")
             self.call_from_thread(self._do_read)
         except Exception as e:
-            log_error(f"Write failed: {e}")
             self.call_from_thread(log.write, f"[red]Write failed: {e}[/red]")
 
     def action_toggle_bit(self) -> None:
@@ -773,7 +770,6 @@ class S7MonitorApp(App):
                 hex_str = " ".join(f"{b:02X}" for b in result.data)
                 self.call_from_thread(log.write, f"DB{db}[{offset}:{offset+size}]: {hex_str}")
             except Exception as e:
-                log_error(f"Read command failed: {e}")
                 self.call_from_thread(log.write, f"[red]Read command failed: {e}[/red]")
 
         else:
