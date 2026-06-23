@@ -97,6 +97,9 @@ class HexDumpDisplay(Static):
     hex_content: reactive[str] = reactive("  No data yet")
     db_label: reactive[str] = reactive("DB???")
 
+    def watch_hex_content(self, old_val: str, new_val: str) -> None:
+        self.refresh(layout=True)
+
     def render(self) -> Text:
         title = Text(f"  ─── {self.db_label} ", style="bold cyan")
         title.append("─" * max(0, 62 - len(self.db_label) - 6), style="dim cyan")
@@ -305,7 +308,7 @@ class S7MonitorApp(App):
     }
     HexDumpDisplay {
         height: auto;
-        max-height: 12;
+        max-height: 24;
         margin: 0 0 1 0;
     }
     #var-table {
