@@ -224,6 +224,16 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
                     group.size = max(group.size, cfg.size)
                     group.start = min(group.start, db_start_val)
 
+        if protocol == "eip":
+            for group in read_groups:
+                src = str(group.source).lower()
+                if "input" in src:
+                    group.start = 0
+                    group.size = max(group.size, cfg.input_size or 32)
+                elif "output" in src:
+                    group.start = 0
+                    group.size = max(group.size, cfg.output_size or 32)
+
     elif protocol == "s7" and cfg.db is not None and cfg.size is not None:
         db_start_val = cfg.start if cfg.start is not None else 0
         parsed_vars = list[Variable](build_default_variables(cfg.db, db_start_val, cfg.size))
