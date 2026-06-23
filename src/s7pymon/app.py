@@ -821,3 +821,7 @@ class S7MonitorApp(App):
         """Clean up resources when the app exits."""
         if self._data_logger is not None:
             self._data_logger.close()
+        try:
+            self._connection.disconnect()
+        except Exception:
+            pass
