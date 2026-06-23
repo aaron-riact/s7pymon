@@ -75,13 +75,14 @@ class EIPConnection(Connection):
                     conn,
                 )
 
-                eip.startIO()
+                eip.startIO(udp_port=0)
                 result = conn.sendFwdOpenReq(
                     inputinst=self._config.input_assembly,
                     outputinst=self._config.output_assembly,
                     configinst=self._config.config_assembly,
                     torpi=self._config.rpi_ms,
                     otrpi=self._config.rpi_ms,
+                    originator_udp_port=eip.originator_udp_port,
                 )
                 if result != 0:
                     raise ConnectionError(
