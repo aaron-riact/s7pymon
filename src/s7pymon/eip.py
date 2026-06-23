@@ -56,6 +56,7 @@ class EIPConnection(Connection):
                 import ethernetip
 
                 eip = ethernetip.EtherNetIP(self._config.address)
+                ethernetip.config.IO_SOCKET_SELECT_TIMEOUT = 0.5
                 conn = eip.explicit_conn()
                 conn.registerSession()
 
