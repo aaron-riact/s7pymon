@@ -779,10 +779,21 @@ class S7MonitorApp(App):
             except Exception as e:
                 self.call_from_thread(log.write, f"[red]Read command failed: {e}[/red]")
 
+        elif command == "pulse" and len(parts) >= 2:
+            target = parts[1]
+            try:
+                self.trigger_pulse(target)
+                self.call_from_thread(log.write, f"[green]Pulsed {target!r}[/green]")
+            except KeyError as e:
+                self.call_from_thread(log.write, f"[red]{e}[/red]")
+            except Exception as e:
+                log_error(f"Pulse command failed: {e}")
+                self.call_from_thread(log.write, f"[red]Pulse failed: {e}[/red]")
+
         else:
             self.call_from_thread(
                 log.write,
-                "[yellow]Commands: write <db> <offset> <hex...> │ set <spec> <value> │ read <db> <offset> <size>[/yellow]",
+                f"[yellow]Unknown command: {cmd_text}. Try: write | set | read | pulse <target>[/yellow]",
             )
 
     def action_force_refresh(self) -> None:

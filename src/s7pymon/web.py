@@ -284,6 +284,16 @@ class _Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     self._send_json(400, {"error": f"unknown write mode: {mode}"})
                     return
+        elif action == "pulse":
+            target = body.get("target")
+            if not target:
+                self._send_json(400, {"error": "pulse requires a 'target' field"})
+                return
+            try:
+                engine.trigger_pulse(str(target))
+            except KeyError as e:
+                self._send_json(400, {"error": str(e)})
+                return
         else:
             self._send_json(400, {"error": f"unknown action: {action!r}"})
             return
