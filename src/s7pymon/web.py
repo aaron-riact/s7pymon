@@ -41,7 +41,7 @@ import click
 
 from .config import S7MonitorConfig
 from .engine import MonitorEngine, WriteBlockedError, WriteMode
-from .errors import log_error
+from .errors import dump_errors, log_error
 from .logging import DataLogger, SessionMetadata
 
 WEBUI_DIR = Path(__file__).parent / "webui"
@@ -471,6 +471,7 @@ def web_cli(
         click.echo("\nShutting down…")
     finally:
         server.shutdown()
+    dump_errors()
 
 
 if __name__ == "__main__":

@@ -38,6 +38,7 @@ import click
 from .config import S7MonitorConfig
 from .connection import S7Connection
 from .eip import EIPConnection
+from .errors import dump_errors
 from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
 from .protocols import Connection, ConnectionConfig, DataSource
@@ -411,6 +412,7 @@ def main(
         rules_engine=runtime.rules_engine,
     )
     app.run()
+    dump_errors()
 
 
 def cli():

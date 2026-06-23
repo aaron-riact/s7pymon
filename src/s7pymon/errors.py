@@ -1,8 +1,9 @@
 """Error logging that survives TUI alternate-screen exit.
 
-Writes to both ``stderr`` (works when redirected to a file) and a
-persistent append-only log at ``/tmp/s7pymon-errors.log`` so tracebacks
-are never lost behind the alternate screen buffer.
+Accumulates errors in memory during the session, then prints them to
+``stderr`` after the TUI exits (when the alternate screen is swapped out
+and stderr is visible again).  Also writes each error to ``stderr``
+immediately so users who redirect stderr to a file see them in real time.
 """
 
 from __future__ import annotations
@@ -11,37 +12,41 @@ import sys
 import traceback
 from datetime import datetime
 
-LOG_PATH = "/tmp/s7pymon-errors.log"
-_seen_first_error = False
+_errors: list[tuple[str, str, str]] = []
+"""Accumulated (timestamp, message, traceback) tuples."""
 
 
 def log_error(msg: str) -> None:
-    """Log *msg* and the current exception traceback to ``stderr`` and a file.
+    """Log *msg* and the current exception traceback.
 
     Must be called from within an ``except`` block.
+    Writes to stderr immediately (flush=True) for file-redirected stderr,
+    and appends to an in-memory list for the exit dump.
     """
-    global _seen_first_error
     tb = traceback.format_exc()
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print(f"\n[{ts}] ERROR: {msg}", file=sys.stderr, flush=True)
     print(tb, file=sys.stderr, flush=True)
 
-    try:
-        with open(LOG_PATH, "a") as f:
-            print(f"[{ts}] ERROR: {msg}", file=f)
-            print(tb, file=f)
-    except OSError:
-        pass
-
-    if not _seen_first_error:
-        _seen_first_error = True
-        print(
-            f"\n[{ts}] Full error log: {LOG_PATH}",
-            file=sys.stderr, flush=True,
-        )
+    _errors.append((ts, msg, tb))
 
 
-def log_error_path() -> str:
-    """Return the path to the persistent error log."""
-    return LOG_PATH
+def dump_errors() -> None:
+    """Print all accumulated errors to stderr.
+
+    Intended to be called *after* the TUI (or web server) exits, when the
+    terminal is back in normal mode and stderr output is visible.
+    Does nothing if there were no errors.
+    """
+    if not _errors:
+        return
+
+    print(file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    print("ERRORS DURING SESSION", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    for ts, msg, tb in _errors:
+        print(f"\n[{ts}] ERROR: {msg}", file=sys.stderr)
+        print(tb, file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
