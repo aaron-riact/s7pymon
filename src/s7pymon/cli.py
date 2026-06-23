@@ -27,6 +27,7 @@ Examples:
     s7pymon 192.168.1.100 --interval 0.25 DB210.Byte0 DB210.Byte1
 """
 
+import logging
 import sys
 from collections import defaultdict
 from collections.abc import Sequence
@@ -44,6 +45,18 @@ from .logging import LogFormat
 from .protocols import Connection, ConnectionConfig, DataSource
 from .rules import FollowRule, OutputRule, PulseRule, RulesEngine, ToggleRule
 from .variable import S7Area, DataType, S7Variable, Variable, compute_read_range
+
+
+log = logging.getLogger(__name__)
+
+
+def configure_debug_logging() -> None:
+    """Send DEBUG records from every busfactor module to stderr (the -v flag)."""
+    logging.basicConfig(
+        level=logging.DEBUG,
+        stream=sys.stderr,
+        format="[%(name)s] %(message)s",
+    )
 
 
 def parse_variable_arg(arg: str) -> Variable:
@@ -245,6 +258,10 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
 
     rules_engine = build_rules_engine(cfg.rules)
 
+    log.debug("protocol=%s address=%s", protocol, final_address)
+    for g in read_groups:
+        log.debug("read group source=%r start=%s size=%s", g.source, g.start, g.size)
+
     return ResolvedRuntime(
         connection=connection,
         variables=parsed_vars,
@@ -273,6 +290,7 @@ def load_merged_config(
     variables: tuple[str, ...],
     log_file: str | None,
     log_format: str | None,
+    verbose: bool = False,
 ) -> S7MonitorConfig:
     """Load an optional YAML config file and overlay CLI overrides.
 
@@ -302,6 +320,7 @@ def load_merged_config(
         variables=variables,
         log_file=log_file,
         log_format=log_format,
+        verbose=verbose,
     )
 
 
@@ -340,6 +359,7 @@ def load_merged_config(
     default=None,
     help="Log file format (default: csv).",
 )
+@click.option("-v", "--verbose", is_flag=True, default=False, help="Verbose connection debug output.")
 def main(
     address: str | None,
     variables: tuple[str, ...],
@@ -355,6 +375,7 @@ def main(
     write_mode: str | None,
     log_file: str | None,
     log_format: str | None,
+    verbose: bool = False,
 ) -> None:
     """s7pymon — Live S7 PLC data monitor.
 
@@ -386,6 +407,9 @@ def main(
     """
     from .app import S7MonitorApp
 
+    if verbose:
+        configure_debug_logging()
+
     cfg = load_merged_config(
         config_file,
         address=address,
@@ -401,6 +425,7 @@ def main(
         variables=variables,
         log_file=log_file,
         log_format=log_format,
+        verbose=verbose,
     )
 
     try:

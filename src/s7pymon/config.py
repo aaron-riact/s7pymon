@@ -75,6 +75,7 @@ class S7MonitorConfig:
     rpi_ms: int | None = None
     # Output rules (dict of target -> rule config)
     rules: dict[str, dict[str, Any]] = field(default_factory=dict)
+    verbose: bool = False
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> S7MonitorConfig:
@@ -118,6 +119,7 @@ class S7MonitorConfig:
             output_size=raw.get("output_size"),
             rpi_ms=raw.get("rpi_ms"),
             rules=raw.get("rules", {}),
+            verbose=raw.get("verbose", False),
         )
 
     def merge_cli(
@@ -143,6 +145,7 @@ class S7MonitorConfig:
         input_size: int | None = None,
         output_size: int | None = None,
         rpi_ms: int | None = None,
+        verbose: bool | None = None,
     ) -> S7MonitorConfig:
         """Return a new config with CLI args overriding file values.
 
@@ -171,4 +174,5 @@ class S7MonitorConfig:
             input_size=input_size if input_size is not None else self.input_size,
             output_size=output_size if output_size is not None else self.output_size,
             rpi_ms=rpi_ms if rpi_ms is not None else self.rpi_ms,
+            verbose=verbose if verbose is not None else self.verbose,
         )

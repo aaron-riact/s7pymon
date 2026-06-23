@@ -6,11 +6,14 @@ so :class:`MonitorEngine` can poll EIP assemblies as ``DataSource`` values.
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 
 from .errors import log_error
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
+
+log = logging.getLogger(__name__)
 
 _EIP_SOURCE = re.compile(r"^EIP\.(Input|Output|Config|\d+)$", re.IGNORECASE)
 
@@ -52,6 +55,7 @@ class EIPConnection(Connection):
         with self._lock:
             self._state = ConnectionState.CONNECTING
             self._error = ""
+            log.debug("Connecting to %s:%s ...", self._config.address, self._config.tcp_port)
             try:
                 import ethernetip
 
@@ -63,12 +67,14 @@ class EIPConnection(Connection):
                 self._input_size = self._config.input_size
                 self._output_size = self._config.output_size
 
+                log.debug("Registering Input assembly %s (%s bytes)", self._config.input_assembly, self._input_size)
                 input_bits = eip.registerAssembly(
                     ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT,
                     self._input_size,
                     self._config.input_assembly,
                     conn,
                 )
+                log.debug("Registering Output assembly %s (%s bytes)", self._config.output_assembly, self._output_size)
                 output_bits = eip.registerAssembly(
                     ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT,
                     self._output_size,
@@ -77,6 +83,10 @@ class EIPConnection(Connection):
                 )
 
                 eip.startIO(udp_port=0)
+                log.debug(
+                    "Forward open: in=%s out=%s rpi=%sms",
+                    self._config.input_assembly, self._config.output_assembly, self._config.rpi_ms,
+                )
                 result = conn.sendFwdOpenReq(
                     inputinst=self._config.input_assembly,
                     outputinst=self._config.output_assembly,
@@ -96,6 +106,7 @@ class EIPConnection(Connection):
                 self._input_bits = input_bits
                 self._output_bits = output_bits
                 self._state = ConnectionState.CONNECTED
+                log.debug("Connected OK")
             except ImportError:
                 self._state = ConnectionState.ERROR
                 self._error = "ethernetip library not available"
@@ -108,17 +119,21 @@ class EIPConnection(Connection):
                 raise
 
     def disconnect(self) -> None:
+        log.debug("Disconnecting ...")
         with self._lock:
             self._cleanup()
             self._state = ConnectionState.DISCONNECTED
             self._error = ""
+            log.debug("Disconnected")
 
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
+        log.debug("read_source(%s, offset=%s, size=%s)", source, offset, size)
         with self._lock:
             if not self.connected:
                 raise ConnectionError("Not connected")
             bits, asm_size = self._resolve(source)
             if offset + size > asm_size:
+                log.debug("BOUNDS ERROR: offset=%s size=%s asm_size=%s", offset, size, asm_size)
                 raise ValueError(
                     f"Read {source} offset {offset} size {size} "
                     f"exceeds assembly size {asm_size}"
@@ -132,6 +147,7 @@ class EIPConnection(Connection):
             )
 
     def write_source(self, source: DataSource, offset: int, data: bytearray) -> None:
+        log.debug("write_source(%s, offset=%s, len=%s)", source, offset, len(data))
         with self._lock:
             if not self.connected:
                 raise ConnectionError("Not connected")
