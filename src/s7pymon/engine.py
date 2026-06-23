@@ -15,13 +15,12 @@ two frontends share a single source of truth.
 from __future__ import annotations
 
 import logging
-import sys
-import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Union
 
+from .errors import log_error
 from .protocols import Connection, ConnectionState, DataSource
 from .logging import DataLogger, LogEntry
 from .rules import RulesEngine
@@ -328,8 +327,7 @@ class MonitorEngine:
                     )
                 )
         except Exception as e:
-            print(f"\n[ERROR] Engine poll failed: {e}", file=sys.stderr, flush=True)
-            traceback.print_exc(file=sys.stderr)
+            log_error(f"Engine poll failed: {e}")
             return self._snapshot(error=str(e), groups=[], readings=[])
 
         self._previous_values = dict(self._current_values)
@@ -361,8 +359,7 @@ class MonitorEngine:
             raw_bytes = data[local : local + var.byte_size]
             raw_hex = " ".join(f"{b:02X}" for b in raw_bytes)
         except Exception as e:
-            print(f"\n[ERROR] Variable decode failed for {var.spec}: {e}", file=sys.stderr, flush=True)
-            traceback.print_exc(file=sys.stderr)
+            log_error(f"Variable decode failed for {var.spec}: {e}")
             return self._reading(var, label, value="ERR", raw_hex="", changed=False,
                                  error=str(e))
 

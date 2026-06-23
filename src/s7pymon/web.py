@@ -32,7 +32,6 @@ import queue
 import re
 import sys
 import threading
-import traceback
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,6 +41,7 @@ import click
 
 from .config import S7MonitorConfig
 from .engine import MonitorEngine, WriteBlockedError, WriteMode
+from .errors import log_error
 from .logging import DataLogger, SessionMetadata
 
 WEBUI_DIR = Path(__file__).parent / "webui"
@@ -240,8 +240,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": str(e)})
             return
         except Exception as e:  # connection / PLC errors
-            print(f"\n[ERROR] Web write failed: {e}", file=sys.stderr, flush=True)
-            traceback.print_exc(file=sys.stderr)
+            log_error(f"Web write failed: {e}")
             self._send_json(502, {"error": str(e)})
             return
         # Push a fresh read so every client sees the new value at once.
@@ -272,8 +271,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 engine.reconnect()
             except Exception as e:
-                print(f"\n[ERROR] Web reconnect failed: {e}", file=sys.stderr, flush=True)
-                traceback.print_exc(file=sys.stderr)
+                log_error(f"Web reconnect failed: {e}")
                 self._send_json(502, {"error": str(e)})
                 return
         elif action == "write_mode":
@@ -456,7 +454,7 @@ def web_cli(
         engine.connect()
         click.echo(f"Connected to {runtime.connection.config.display}")
     except Exception as e:
-        traceback.print_exc(file=sys.stderr)
+        log_error(f"Initial connection failed: {e}")
         click.echo(f"Warning: initial connection failed: {e}", err=True)
         click.echo("Starting anyway — use the Reconnect button in the UI.", err=True)
 
