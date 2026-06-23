@@ -360,6 +360,7 @@ class S7MonitorApp(App):
         self._previous_values: dict[str, str] = {}
         self._poll_count = 0
         self._poll_timer = None
+        self._row_keys: dict[int, str] = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -391,6 +392,8 @@ class S7MonitorApp(App):
         table.add_column("Raw Hex", key=self.COL_RAW_HEX)
 
         for var in self._variables:
+            row_key = f"var_{id(var)}"
+            self._row_keys[id(var)] = row_key
             table.add_row(
                 str(var.source),
                 var.display_name,
@@ -398,7 +401,7 @@ class S7MonitorApp(App):
                 str(var.offset) + (f".{var.extra}" if var.type == DataType.BIT else ""),
                 "—",
                 "—",
-                key=var.spec,
+                key=row_key,
             )
 
         # Set connection info
@@ -565,13 +568,17 @@ class S7MonitorApp(App):
                 value_display = Text(formatted, style=style) if changed else formatted
                 raw_display = Text(raw_hex, style=style) if changed else raw_hex
 
-                row_key = var.spec
+                row_key = self._row_keys.get(id(var))
+                if row_key is None:
+                    continue
                 # Update existing row values
                 table.update_cell(row_key, self.COL_VALUE, value_display)
                 table.update_cell(row_key, self.COL_RAW_HEX, raw_display)
 
             except Exception as e:
-                table.update_cell(var.spec, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
+                row_key = self._row_keys.get(id(var))
+                if row_key is not None:
+                    table.update_cell(row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
 
         # Update connection status poll count
         conn_status = self.query_one("#conn-status", ConnectionStatus)
