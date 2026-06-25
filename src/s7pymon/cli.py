@@ -436,6 +436,7 @@ def main(
             click.echo("Try: s7pymon --help", err=True)
         sys.exit(1)
 
+    print(f"[cli] rules_engine={runtime.rules_engine!r}", file=sys.stderr, flush=True)
     app = S7MonitorApp(
         connection=runtime.connection,
         variables=runtime.variables,
