@@ -505,12 +505,26 @@ class S7MonitorApp(App):
             try:
                 value = extract_value(var, data, data_start)
                 current_values[var.spec] = var.format_value(value)
+                if var.label:
+                    current_values[var.label] = current_values[var.spec]
             except Exception:
                 pass
-        import sys
-        print(f"[app] _apply_rules with {len(current_values)} values", file=sys.stderr, flush=True)
-        if self._rules_engine._verbose:
-            print(f"[app] _apply_rules: values={current_values}", file=sys.stderr, flush=True)
+
+        # Resolve follow rule sources not backed by a defined variable
+        for rule in self._rules_engine.rules:
+            if not hasattr(rule, 'source') or rule.source in current_values:
+                continue
+            try:
+                var = Variable.parse(rule.source)
+                key = str(var.source)
+                entry = buffers.get(key)
+                if entry is not None:
+                    data, data_start = entry
+                    value = extract_value(var, data, data_start)
+                    current_values[rule.source] = var.format_value(value)
+            except Exception:
+                pass
+
         self._rules_engine.apply(self._connection, current_values)
 
     def trigger_pulse(self, target: str) -> None:
