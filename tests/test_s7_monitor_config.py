@@ -152,3 +152,17 @@ class TestS7MonitorConfigMergeCli:
         assert merged.protocol == "eip"
         assert merged.input_assembly == 201
         assert merged.output_assembly == 100
+
+    def test_cli_merge_preserves_rules(self):
+        config = S7MonitorConfig(
+            protocol="eip",
+            rules={
+                "EIP.Output.Byte0": {"follow": "EIP.Input.Byte0"},
+                "EIP.Output.Bit0.0": {"toggle": 2},
+            },
+        )
+        merged = config.merge_cli(address="10.0.0.1")
+        assert merged.rules == {
+            "EIP.Output.Byte0": {"follow": "EIP.Input.Byte0"},
+            "EIP.Output.Bit0.0": {"toggle": 2},
+        }
