@@ -40,7 +40,7 @@ Example EIP config file (eip-monitor.yaml):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -147,32 +147,35 @@ class S7MonitorConfig:
         rpi_ms: int | None = None,
         verbose: bool | None = None,
     ) -> S7MonitorConfig:
-        """Return a new config with CLI args overriding file values.
+        """Return a copy of this config with the given CLI values applied.
 
-        CLI values override config file values when explicitly provided.
-        For click options, we pass None to indicate "not specified".
+        A value of None means the option was not given, so the file's value
+        stands. Fields that have no CLI option (rules, and anything added
+        later) are carried over untouched, because ``replace`` starts from
+        this config rather than from an empty one.
         """
-        return S7MonitorConfig(
-            address=address or self.address,
-            protocol=protocol or self.protocol,
-            rack=rack if rack is not None else self.rack,
-            slot=slot if slot is not None else self.slot,
-            port=port if port is not None else self.port,
-            timeout=timeout if timeout is not None else self.timeout,
-            interval=interval if interval is not None else self.interval,
-            write_mode=write_mode or self.write_mode,
-            db=db_number if db_number is not None else self.db,
-            start=db_start if db_start is not None else self.start,
-            size=db_size if db_size is not None else self.size,
-            variables=list(variables) if variables else self.variables,
-            log_file=log_file or self.log_file,
-            log_format=log_format or self.log_format,
-            eip_port=eip_port if eip_port is not None else self.eip_port,
-            input_assembly=input_assembly if input_assembly is not None else self.input_assembly,
-            output_assembly=output_assembly if output_assembly is not None else self.output_assembly,
-            config_assembly=config_assembly if config_assembly is not None else self.config_assembly,
-            input_size=input_size if input_size is not None else self.input_size,
-            output_size=output_size if output_size is not None else self.output_size,
-            rpi_ms=rpi_ms if rpi_ms is not None else self.rpi_ms,
-            verbose=verbose if verbose is not None else self.verbose,
-        )
+        overrides: dict[str, Any] = {
+            "address": address,
+            "protocol": protocol,
+            "rack": rack,
+            "slot": slot,
+            "port": port,
+            "timeout": timeout,
+            "interval": interval,
+            "write_mode": write_mode,
+            "db": db_number,
+            "start": db_start,
+            "size": db_size,
+            "variables": list(variables) if variables else None,
+            "log_file": log_file,
+            "log_format": log_format,
+            "eip_port": eip_port,
+            "input_assembly": input_assembly,
+            "output_assembly": output_assembly,
+            "config_assembly": config_assembly,
+            "input_size": input_size,
+            "output_size": output_size,
+            "rpi_ms": rpi_ms,
+            "verbose": verbose,
+        }
+        return replace(self, **{name: value for name, value in overrides.items() if value is not None})
