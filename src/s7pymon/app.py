@@ -419,6 +419,10 @@ class S7MonitorApp(App):
 
         log = self.query_one("#log-panel", RichLog)
         log.write("[bold]S7 Monitor[/bold] ready. Connecting…")
+        if self._rules_engine is not None:
+            log.write(f"[dim]Rules engine loaded: {len(self._rules_engine.rules)} rule(s)[/dim]")
+        else:
+            log.write("[dim]No rules engine[/dim]")
 
         # Start data logger if configured
         if self._log_file:
@@ -503,9 +507,10 @@ class S7MonitorApp(App):
                 current_values[var.spec] = var.format_value(value)
             except Exception:
                 pass
+        import sys
+        print(f"[app] _apply_rules with {len(current_values)} values", file=sys.stderr, flush=True)
         if self._rules_engine._verbose:
-            import sys
-            print(f"[app] _apply_rules: {len(current_values)} values: {current_values}", file=sys.stderr, flush=True)
+            print(f"[app] _apply_rules: values={current_values}", file=sys.stderr, flush=True)
         self._rules_engine.apply(self._connection, current_values)
 
     def trigger_pulse(self, target: str) -> None:
