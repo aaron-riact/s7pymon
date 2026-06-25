@@ -503,6 +503,9 @@ class S7MonitorApp(App):
                 current_values[var.spec] = var.format_value(value)
             except Exception:
                 pass
+        if self._rules_engine._verbose:
+            import sys
+            print(f"[app] _apply_rules: {len(current_values)} values: {current_values}", file=sys.stderr, flush=True)
         self._rules_engine.apply(self._connection, current_values)
 
     def trigger_pulse(self, target: str) -> None:

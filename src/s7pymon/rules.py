@@ -12,10 +12,13 @@ or mixed.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from .protocols import Connection
 from .variable import DataType, Variable
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class RulesEngine:
     def apply(
         self, connection: Connection, current_values: dict[str, str]
     ) -> None:
+        log.debug("apply() with %d rules, %d values", len(self._states), len(current_values))
         for state in self._states:
             rule = state.rule
             if isinstance(rule, FollowRule):
@@ -90,7 +94,9 @@ class RulesEngine:
     ) -> None:
         formatted = current_values.get(rule.source)
         if formatted is None:
+            log.debug("follow %s <- %s: source not in current_values, skipping", rule.target, rule.source)
             return
+        log.debug("follow %s <- %s: value=%s", rule.target, rule.source, formatted)
         parsed = target_var.parse_input(formatted)
         if target_var.type == DataType.BIT:
             if not isinstance(parsed, bool):
@@ -105,10 +111,12 @@ class RulesEngine:
 
     def _apply_toggle(self, rule: ToggleRule, state: _RuleState, connection: Connection) -> None:
         state.counter += 1
+        log.debug("toggle %s period=%d counter=%d/%d", rule.target, rule.period, state.counter, rule.period)
         if state.counter < rule.period:
             return
         state.counter = 0
         state.toggle_on = not state.toggle_on
+        log.debug("toggle %s -> firing, new_state=%s", rule.target, state.toggle_on)
         self._write_bit_state(connection, state.target, state.toggle_on)
 
     def _write_bit_state(
