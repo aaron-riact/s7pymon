@@ -500,3 +500,86 @@ class TestEIPVariableParsing:
     def test_eip_chars_format_value(self):
         v = S7Variable.parse("EIP.Input.Chars0.10")
         assert v.format_value("hello") == "'hello'"
+
+    def test_eip_parse_word_bit_hex(self):
+        v = S7Variable.parse("EIP.Input.Word3.f")
+        assert v.type == DataType.WORD
+        assert v.offset == 3
+        assert v.extra == 15
+        assert v.byte_size == 2
+
+    def test_eip_parse_word_bit_decimal(self):
+        v = S7Variable.parse("EIP.Input.Word3.15")
+        assert v.type == DataType.WORD
+        assert v.extra == 15
+
+    def test_eip_parse_dword_bit(self):
+        v = S7Variable.parse("EIP.Input.DWord4.1f")
+        assert v.type == DataType.DWORD
+        assert v.offset == 4
+        assert v.extra == 31
+        assert v.byte_size == 4
+
+    def test_eip_parse_word_bit_zero(self):
+        v = S7Variable.parse("EIP.Input.Word0.0")
+        assert v.type == DataType.WORD
+        assert v.extra == 0
+
+    def test_eip_word_bit_decode_set(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        assert v.decode(b"\xFF\xFF") is True
+        assert v.decode(b"\x80\x00") is True  # bit 15 set
+
+    def test_eip_word_bit_decode_clear(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        assert v.decode(b"\x00\x00") is False
+        assert v.decode(b"\x7F\xFF") is False  # bit 15 clear
+
+    def test_eip_dword_bit_decode(self):
+        v = S7Variable.parse("EIP.Input.DWord0.1f")
+        assert v.decode(b"\x80\x00\x00\x00") is True   # bit 31 set
+        assert v.decode(b"\x00\x00\x00\x00") is False   # all clear
+
+    def test_eip_word_bit_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="must be 0-15"):
+            S7Variable.parse("EIP.Input.Word0.1f")
+
+    def test_eip_dword_bit_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="must be 0-31"):
+            S7Variable.parse("EIP.Input.DWord0.2a")
+
+    def test_eip_word_bit_format(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        assert v.format_value(True) == "1"
+        assert v.format_value(False) == "0"
+
+    def test_eip_word_bit_parse_input(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        assert v.parse_input("1") is True
+        assert v.parse_input("true") is True
+        assert v.parse_input("0") is False
+        assert v.parse_input("false") is False
+
+    def test_eip_word_bit_parse_input_invalid_raises(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        with pytest.raises(ValueError, match="Invalid bit value"):
+            v.parse_input("xyz")
+
+    def test_eip_word_bit_encode_raises(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        with pytest.raises(ValueError, match="Cannot encode whole register"):
+            v.encode(42)
+
+    def test_db_parse_word_bit(self):
+        v = S7Variable.parse("DB1.Word2.1")
+        assert v.type == DataType.WORD
+        assert v.extra == 1
+
+    def test_area_parse_word_bit(self):
+        v = S7Variable.parse("AB.Word2.1")
+        assert v.type == DataType.WORD
+        assert v.extra == 1
+
+    def test_eip_word_spec_shows_decimal(self):
+        v = S7Variable.parse("EIP.Input.Word0.f")
+        assert v.spec == "EIP.Input.Word0.15"
