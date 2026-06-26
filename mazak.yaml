@@ -1,0 +1,57 @@
+protocol: eip
+address: 127.0.0.1
+#address: 192.168.10.1
+interval: 0.1               # 100 ms for fast I/O
+#output_assembly: 150
+output_assembly: 100
+#input_assembly: 100
+input_assembly: 101
+#input_size: 100
+input_size: 110
+#output_size: 100
+output_size: 110
+rpi_ms: 100
+variables:
+  #- EIP.Input.Byte4:heartbeat
+  - EIP.Input.Bit0.0:heartbeat
+  - EIP.Input.Bit0.1:machine_ready
+  - EIP.Input.Bit0.2:robot stop request
+  - EIP.Input.Bit0.3:panel retracted
+  - EIP.Input.Bit0.4:alarm
+  - EIP.Input.Bit0.6:power off req ack
+  - EIP.Input.Bit1.0:1 clamp complete
+  - EIP.Input.Bit1.1:1 unclamp complete
+  - EIP.Input.Bit1.2:2 clamp complete
+  - EIP.Input.Bit1.3:2 unclamp complete
+  - EIP.Input.Bit1.4:3 clamp complete
+  - EIP.Input.Bit1.5:3 unclamp complete
+  - EIP.Input.Bit1.6:4 clamp complete
+  - EIP.Input.Bit1.7:4 unclamp complete
+  - EIP.Input.Bit2.0:Seat detect complete 1
+  - EIP.Input.Bit2.1:Seat detect complete 2
+  - EIP.Input.Bit2.2:Workpiece seat detect alarm 1
+  - EIP.Input.Bit2.3:Workpiece seat detect alarm 2
+  - EIP.Input.Chars44.32:Program
+  #- EIP.Input.Ascii8:32:Current work number
+  #- EIP.Input.Bit5.1:chuck1unclamped
+  #- EIP.Input.Int8:temperature
+  #- EIP.Input.Int8:temperature2
+  #- EIP.Input.Int8:temperature3
+  #- EIP.Input.Int8:temperature4
+  #- EIP.Input.Int8:temperature5
+  #- EIP.Input.Int8:temperature6
+  #- EIP.Output.DWord8:setpoint1
+  #- EIP.Output.DWord8:setpoint2
+  #- EIP.Output.DWord8:setpoint3
+  #- EIP.Output.DWord8:setpoint4
+  #- EIP.Output.DWord8:setpoint5
+  #- EIP.Output.DWord8:setpoint6
+  - EIP.Output.Bit0.0:heartbeat
+rules:
+  # Copy input byte 0 to output byte 0 every cycle
+  EIP.Output.Bit0.0:
+    follow: EIP.Input.Bit0.0
+  # Toggle bit 0 of output byte 0 every 2 cycles (heartbeat)
+  #EIP.Output.Bit1.0:
+  #  toggle: 2
+

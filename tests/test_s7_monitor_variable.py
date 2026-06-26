@@ -452,3 +452,51 @@ class TestEIPVariableParsing:
     def test_eip_missing_bit_number_raises(self):
         with pytest.raises(ValueError, match="requires bit number"):
             S7Variable.parse("EIP.Input.Bit0")
+
+    def test_parse_chars(self):
+        v = S7Variable.parse("DB200.Chars50.20")
+        assert v.type == DataType.CHARS
+        assert v.offset == 50
+        assert v.extra == 20
+        assert v.byte_size == 20  # no header bytes
+
+    def test_parse_chars_requires_length(self):
+        with pytest.raises(ValueError, match="requires max length"):
+            S7Variable.parse("DB200.Chars50")
+
+    def test_eip_parse_chars(self):
+        v = S7Variable.parse("EIP.Input.Chars8.32")
+        assert v.type == DataType.CHARS
+        assert v.offset == 8
+        assert v.extra == 32
+        assert v.byte_size == 32
+        assert v.spec == "EIP.Input.Chars8.32"
+
+    def test_eip_chars_decode_trailing_nulls(self):
+        v = S7Variable.parse("EIP.Input.Chars0.10")
+        data = b"Hello\x00\x00\x00\x00\x00"
+        assert v.decode(data) == "Hello"
+
+    def test_eip_chars_decode_no_trailing_nulls(self):
+        v = S7Variable.parse("EIP.Input.Chars0.5")
+        assert v.decode(b"World") == "World"
+
+    def test_eip_chars_decode_all_nulls(self):
+        v = S7Variable.parse("EIP.Input.Chars0.10")
+        assert v.decode(b"\x00" * 10) == ""
+
+    def test_eip_chars_encode_pads_nulls(self):
+        v = S7Variable.parse("EIP.Input.Chars0.8")
+        assert v.encode("Hi") == bytearray(b"Hi\x00\x00\x00\x00\x00\x00")
+
+    def test_eip_chars_encode_truncates(self):
+        v = S7Variable.parse("EIP.Input.Chars0.4")
+        assert v.encode("Hello") == bytearray(b"Hell")
+
+    def test_eip_chars_decode_encode_roundtrip(self):
+        v = S7Variable.parse("EIP.Input.Chars0.10")
+        assert v.decode(v.encode("Test")) == "Test"
+
+    def test_eip_chars_format_value(self):
+        v = S7Variable.parse("EIP.Input.Chars0.10")
+        assert v.format_value("hello") == "'hello'"

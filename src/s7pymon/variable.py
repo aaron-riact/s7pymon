@@ -65,6 +65,7 @@ class DataType(Enum):
     REAL = "Real"
     BIT = "Bit"
     STRING = "String"
+    CHARS = "Chars"
 
     @property
     def byte_size(self) -> int:
@@ -84,6 +85,7 @@ _TYPE_SIZES: dict[DataType, int] = {
     DataType.REAL: 4,
     DataType.BIT: 1,
     DataType.STRING: 0,  # variable, determined by extra param
+    DataType.CHARS: 0,   # variable, determined by extra param
 }
 
 # Big-endian struct formats (S7 is big-endian)
@@ -102,19 +104,19 @@ S7Type = DataType
 
 # Pattern: DB<num>.<Type><offset>[.<extra>]
 _DB_VAR_PATTERN = re.compile(
-    r"^DB(\d+)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String)(\d+)(?:\.(\d+))?$",
+    r"^DB(\d+)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String|Chars)(\d+)(?:\.(\d+))?$",
     re.IGNORECASE,
 )
 
 # Pattern: <Area>.<Type><offset>[.<extra>]  (for EB, AB, MB, CT, TM)
 _AREA_VAR_PATTERN = re.compile(
-    r"^(EB|AB|MB|CT|TM)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String)(\d+)(?:\.(\d+))?$",
+    r"^(EB|AB|MB|CT|TM)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String|Chars)(\d+)(?:\.(\d+))?$",
     re.IGNORECASE,
 )
 
 # Pattern: EIP.<Assembly>.<Type><offset>[.<extra>]
 _EIP_VAR_PATTERN = re.compile(
-    r"^EIP\.(Input|Output|Config|\d+)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String)"
+    r"^EIP\.(Input|Output|Config|\d+)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String|Chars)"
     r"(\d+)(?:\.(\d+))?$",
     re.IGNORECASE,
 )
@@ -124,9 +126,9 @@ _EIP_VAR_PATTERN = re.compile(
 
 
 def _decode_value(data: bytes | bytearray, data_type: DataType, extra: int | None) -> Union[int, float, bool, str]:
-    if len(data) < data_type.byte_size and data_type != DataType.STRING and data_type != DataType.BIT:
+    if len(data) < data_type.byte_size and data_type not in (DataType.STRING, DataType.BIT, DataType.CHARS):
         raise ValueError(f"Need {data_type.byte_size} bytes to decode, got {len(data)}")
-    raw = data[:data_type.byte_size] if data_type != DataType.STRING else data
+    raw = data if data_type in (DataType.STRING, DataType.CHARS) else data[:data_type.byte_size]
 
     if data_type == DataType.BIT:
         assert extra is not None
@@ -137,6 +139,9 @@ def _decode_value(data: bytes | bytearray, data_type: DataType, extra: int | Non
             return ""
         actual_len = raw[1]
         return raw[2 : 2 + actual_len].decode("ascii", errors="replace")
+
+    if data_type == DataType.CHARS:
+        return raw.rstrip(b"\x00").decode("ascii", errors="replace")
 
     fmt = data_type.struct_format
     assert fmt is not None
@@ -158,6 +163,13 @@ def _encode_value(data_type: DataType, extra: int | None, value: Union[int, floa
         buf[2 : 2 + len(s)] = s.encode("ascii", errors="replace")
         return buf
 
+    if data_type == DataType.CHARS:
+        assert extra is not None
+        buf = bytearray(extra)
+        encoded = str(value).encode("ascii", errors="replace")[:extra]
+        buf[:len(encoded)] = encoded
+        return buf
+
     fmt = data_type.struct_format
     assert fmt is not None
     coerced = float(value) if data_type == DataType.REAL else int(value)
@@ -177,7 +189,7 @@ def _format_value(data_type: DataType, value: Union[int, float, bool, str]) -> s
         return "1" if value else "0"
     if data_type == DataType.REAL:
         return f"{value:.4f}"
-    if data_type == DataType.STRING:
+    if data_type in (DataType.STRING, DataType.CHARS):
         return repr(value)
     return str(value)
 
@@ -192,7 +204,7 @@ def _parse_input(data_type: DataType, text: str) -> Union[int, float, bool, str]
         raise ValueError(f"Invalid bit value: {text!r}")
     if data_type == DataType.REAL:
         return float(text)
-    if data_type == DataType.STRING:
+    if data_type in (DataType.STRING, DataType.CHARS):
         return text
     if text.startswith("0x") or text.startswith("0X"):
         return int(text, 16)
@@ -205,8 +217,9 @@ def _validate_type(extra: int | None, data_type: DataType, spec: str) -> None:
             raise ValueError(f"Bit variable requires bit number: {spec} (e.g. DB200.Bit0.3)")
         if not 0 <= extra <= 7:
             raise ValueError(f"Bit number must be 0-7, got {extra} in {spec}")
-    if data_type == DataType.STRING and extra is None:
-        raise ValueError(f"String variable requires max length: {spec} (e.g. DB200.String50.20)")
+    if data_type in (DataType.STRING, DataType.CHARS) and extra is None:
+        type_name = data_type.value
+        raise ValueError(f"{type_name} variable requires max length: {spec} (e.g. DB200.{type_name}50.20)")
 
 
 _type_map: dict[str, DataType] = {str(t.value).lower(): t for t in DataType}
@@ -250,6 +263,10 @@ class Variable(ABC):
             if self.extra is None:
                 raise ValueError(f"String variable {self.spec} requires max length")
             return self.extra + 2
+        if self.type == DataType.CHARS:
+            if self.extra is None:
+                raise ValueError(f"Chars variable {self.spec} requires max length")
+            return self.extra
         return self.type.byte_size
 
     @property
