@@ -314,3 +314,37 @@ class TestSourceResolution:
         conn, _ = connected_conn
         with pytest.raises(ValueError, match="Unknown EIP assembly"):
             conn._resolve(DataSource("EIP.999"))
+
+
+class TestBuildEIPReadGroups:
+    """Tests for build_eip_read_groups()."""
+
+    @staticmethod
+    def groups(**sizes):
+        from s7pymon.eip import build_eip_read_groups
+        return build_eip_read_groups(ConnectionConfig(protocol="eip", **sizes))
+
+    def test_creates_input_and_output_groups(self):
+        groups = self.groups(input_size=64, output_size=32)
+        assert len(groups) == 2
+        assert str(groups[0].source) == "EIP.Input"
+        assert str(groups[1].source) == "EIP.Output"
+
+    def test_input_before_output(self):
+        groups = self.groups(input_size=64, output_size=32)
+        assert groups[0].source.value == "EIP.Input"
+        assert groups[1].source.value == "EIP.Output"
+
+    def test_groups_start_at_zero(self):
+        for g in self.groups(input_size=64, output_size=32):
+            assert g.start == 0
+
+    def test_group_sizes_match_config(self):
+        groups = self.groups(input_size=110, output_size=110)
+        assert groups[0].size == 110
+        assert groups[1].size == 110
+
+    def test_default_sizes(self):
+        groups = self.groups()
+        assert groups[0].size == 32
+        assert groups[1].size == 32
