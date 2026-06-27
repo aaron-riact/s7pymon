@@ -364,6 +364,7 @@ class S7MonitorApp(App):
         self._poll_count = 0
         self._poll_timer = None
         self._row_keys: dict[int, str] = {}
+        self._row_key_to_var: dict = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -397,6 +398,7 @@ class S7MonitorApp(App):
         for var in self._variables:
             row_key = f"var_{id(var)}"
             self._row_keys[id(var)] = row_key
+            self._row_key_to_var[row_key] = var
             table.add_row(
                 str(var.source),
                 var.display_name,
@@ -632,8 +634,7 @@ class S7MonitorApp(App):
         if table.row_count == 0:
             return
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        # Find the variable
-        var = next((v for v in self._variables if v.spec == row_key.value), None)
+        var = self._row_key_to_var.get(row_key.value)
         if var is None:
             return
         current = self._current_values.get(var.spec, "")
@@ -645,7 +646,7 @@ class S7MonitorApp(App):
             return  # Cancelled
         table = self.query_one("#var-table", DataTable)
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        var = next((v for v in self._variables if v.spec == row_key.value), None)
+        var = self._row_key_to_var.get(row_key.value)
         if var is None:
             return
         self._prepare_variable_write(var, result)
@@ -720,7 +721,7 @@ class S7MonitorApp(App):
         if table.row_count == 0:
             return
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        var = next((v for v in self._variables if v.spec == row_key.value), None)
+        var = self._row_key_to_var.get(row_key.value)
         if var is None or var.type != DataType.BIT:
             log = self.query_one("#log-panel", RichLog)
             log.write("[yellow]Toggle only works on Bit variables[/yellow]")

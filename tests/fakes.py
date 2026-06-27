@@ -67,4 +67,6 @@ class BaseFakeConnection(Connection):
     def _buffer_key(self, source: DataSource) -> Hashable:
         if source.value.startswith("DB"):
             return S7Area.DB, int(source.value[2:])
+        if source.value.startswith("EIP."):
+            return source.value, 0
         return S7Area(source.value), 0
