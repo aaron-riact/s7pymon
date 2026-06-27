@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from typing import cast
 
 from .errors import log_error
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
@@ -60,7 +61,7 @@ class EIPConnection(Connection):
                 import ethernetip
 
                 eip = ethernetip.EtherNetIP(self._config.address)
-                ethernetip.config.IO_SOCKET_SELECT_TIMEOUT = 0.5
+                setattr(ethernetip.config, "IO_SOCKET_SELECT_TIMEOUT", 0.5)
                 conn = eip.explicit_conn()
                 conn.registerSession()
 
@@ -103,8 +104,12 @@ class EIPConnection(Connection):
 
                 self._eip = eip
                 self._conn = conn
-                self._input_bits = input_bits
-                self._output_bits = output_bits
+                if input_bits is None:
+                    raise ConnectionError("Input assembly registration returned None")
+                if output_bits is None:
+                    raise ConnectionError("Output assembly registration returned None")
+                self._input_bits = cast("list[bool]", input_bits)
+                self._output_bits = cast("list[bool]", output_bits)
                 self._state = ConnectionState.CONNECTED
                 log.debug("Connected OK")
             except ImportError:
@@ -157,7 +162,7 @@ class EIPConnection(Connection):
                     f"Write {source} offset {offset} size {len(data)} "
                     f"exceeds assembly size {asm_size}"
                 )
-            self._write_bytes_to_bits(bits, offset, data)
+            self._write_bytes_to_bits(bits, offset, bytes(data))
 
     def _resolve(self, source: DataSource) -> tuple[list[bool], int]:
         """Resolve a DataSource to (bit_list, assembly_size_bytes)."""

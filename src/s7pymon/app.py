@@ -495,6 +495,8 @@ class S7MonitorApp(App):
 
     def _apply_rules(self, buffers: dict[str, tuple[bytearray, int]]) -> None:
         """Decode current values from buffers and run rules (worker thread)."""
+        if self._rules_engine is None:
+            return
         current_values: dict[str, str] = {}
         for var in self._variables:
             key = str(var.source)
@@ -512,16 +514,17 @@ class S7MonitorApp(App):
 
         # Resolve follow rule sources not backed by a defined variable
         for rule in self._rules_engine.rules:
-            if not hasattr(rule, 'source') or rule.source in current_values:
+            source: str | None = getattr(rule, "source", None)
+            if source is None or source in current_values:
                 continue
             try:
-                var = Variable.parse(rule.source)
+                var = Variable.parse(source)
                 key = str(var.source)
                 entry = buffers.get(key)
                 if entry is not None:
                     data, data_start = entry
                     value = extract_value(var, data, data_start)
-                    current_values[rule.source] = var.format_value(value)
+                    current_values[source] = var.format_value(value)
             except Exception:
                 pass
 
@@ -584,7 +587,7 @@ class S7MonitorApp(App):
                         type=var.type.value,
                         area=str(var.source),
                         offset=var.offset,
-                        old_value=prev,
+                        old_value=prev or "",
                         new_value=formatted,
                         raw_hex=raw_hex,
                     ))
