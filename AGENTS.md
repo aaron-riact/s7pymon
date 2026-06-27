@@ -8,6 +8,12 @@
 - **Plain language** — avoid technobabble, avoid vague adjectives, and colloquial verbs.  Use direct plain concrete language in commit messages.  Only use abstractions when it clarifies.
 - **Smallest working change, then refactor** — Make the smallest change to enable the feature request, add tests and commit it.  Afterward consider the "best" approach, ask the user if necessary and refactor to well structured code
 
+## Coding approach
+- Performance is the ultimate user experience.  We strive to make this app do **nothing** most of the time.  And when it has to do work, we do it in the most efficient way
+- The intent of the code must be clear, obvious and boring even to human readers
+- Use well established guidelines from known good experienced development teams as, well, guidelines
+
+
 ## Type checking and testing
 
 ```bash
