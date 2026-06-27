@@ -8,44 +8,56 @@ import urllib.request
 
 import pytest
 
-from s7pymon.protocols import ConnectionConfig, ConnectionState, DataSource, ReadResult
+from s7pymon.protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
 from s7pymon.engine import MonitorEngine, ReadGroup, WriteMode
 from s7pymon.variable import S7Area, S7Variable
 from s7pymon.web import Broadcaster, S7WebServer
 
 
 # --------------------------------------------------------------------------- fakes
-class FakeConnection:
+class FakeConnection(Connection):
     def __init__(self, buffers):
-        self.config = ConnectionConfig(address="10.0.0.9")
-        self.state = ConnectionState.CONNECTED
+        self._config = ConnectionConfig(address="10.0.0.9")
+        self._state = ConnectionState.CONNECTED
         self._buffers = buffers
         self.writes = []
 
     @property
-    def connected(self):
-        return self.state == ConnectionState.CONNECTED
+    def config(self) -> ConnectionConfig:
+        return self._config
 
-    def connect(self):
-        self.state = ConnectionState.CONNECTED
+    @property
+    def state(self) -> ConnectionState:
+        return self._state
 
-    def disconnect(self):
-        self.state = ConnectionState.DISCONNECTED
+    @state.setter
+    def state(self, value: ConnectionState) -> None:
+        self._state = value
 
-    def read_source(self, source, offset, size):
+    @property
+    def connected(self) -> bool:
+        return self._state == ConnectionState.CONNECTED
+
+    def connect(self) -> None:
+        self._state = ConnectionState.CONNECTED
+
+    def disconnect(self) -> None:
+        self._state = ConnectionState.DISCONNECTED
+
+    def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         area, db = self._parse(source)
         buf = self._buffers.get((area, db), bytearray(64))
         return ReadResult(data=bytearray(buf[offset:offset + size]),
                           source=source, start=offset, size=size)
 
-    def write_source(self, source, offset, data):
+    def write_source(self, source: DataSource, offset: int, data: bytearray) -> None:
         self.writes.append((source, offset, bytes(data)))
         area, db = self._parse(source)
         buf = self._buffers.setdefault((area, db), bytearray(64))
         buf[offset:offset + len(data)] = data
 
     @staticmethod
-    def _parse(source):
+    def _parse(source: DataSource) -> tuple:
         if source.value.startswith("DB"):
             return S7Area.DB, int(source.value[2:])
         return S7Area(source.value), 0
