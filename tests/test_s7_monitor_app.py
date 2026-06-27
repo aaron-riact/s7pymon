@@ -187,12 +187,12 @@ class TestHexFlash:
         assert "41 42 43" in rendered.plain
 
     def test_changed_bytes_highlighted(self):
-        """Changed bytes have _changed_abs_offsets and render shows the byte."""
+        """Changed bytes have flash keys and render shows the byte."""
         hd = HexDumpDisplay()
         data = bytearray([0x41, 0x42, 0x43])
         hd.set_data([("DB1", data, 0)], changed_per_group={"DB1": {1}})
-        assert 1 in hd._changed_abs_offsets
-        assert 0 not in hd._changed_abs_offsets
+        assert ("DB1", 1) in hd._changed_flash_keys
+        assert ("DB1", 0) not in hd._changed_flash_keys
         rendered = hd.render()
         assert "42" in rendered.plain  # changed byte value shown
 
@@ -263,12 +263,12 @@ class TestHexFlash:
                 hex_dump = app.query_one("#hex-dump", HexDumpDisplay)
                 # First poll — no previous data, so no flash
                 app._on_data_received({"DB1": (bytearray([0xAA, 0xBB, 0xCC, 0xDD]), 0)}, {"DB1": set()})
-                assert len(hex_dump._changed_abs_offsets) == 0
+                assert len(hex_dump._changed_flash_keys) == 0
                 # Second poll — byte 1 changed (0xBB → 0xEE)
                 app._on_data_received({"DB1": (bytearray([0xAA, 0xEE, 0xCC, 0xDD]), 0)}, {"DB1": {1}})
-                assert 1 in hex_dump._changed_abs_offsets
-                assert 0 not in hex_dump._changed_abs_offsets
-                assert 2 not in hex_dump._changed_abs_offsets
+                assert ("DB1", 1) in hex_dump._changed_flash_keys
+                assert ("DB1", 0) not in hex_dump._changed_flash_keys
+                assert ("DB1", 2) not in hex_dump._changed_flash_keys
 
         asyncio.run(run())
 
