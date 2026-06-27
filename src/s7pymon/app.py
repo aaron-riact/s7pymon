@@ -9,7 +9,6 @@ A Textual-based TUI application inspired by Sharp7.Monitor that provides:
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Union
@@ -96,6 +95,11 @@ class ConnectionStatus(Static):
         return result
 
 
+# One byte in the hex dump: (group label, absolute offset). A plain offset is
+# not enough, because two groups can cover the same offsets.
+_ByteKey = tuple[str, int]
+
+
 @dataclass
 class _LineInfo:
     """Metadata for a cached hex-dump line."""
@@ -107,19 +111,56 @@ class _LineInfo:
 class HexDumpDisplay(Static):
     """Live hex dump of read group contents using the Line API."""
 
+    FLASH_DURATION = 4  # poll cycles: bright → bright → medium → dim → off
+
     collapsed: reactive[bool] = reactive(False)
     show_interesting_only: reactive[bool] = reactive(False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._group_data: list[tuple[str, bytearray, int]] = []
-        self._changed_abs_offsets: set[int] = set()
+        # Flash keyed by (group label, absolute offset) so groups with the
+        # same starting offset (e.g. EIP Input/Output) don't collide.
+        self._flash_cycles: dict[_ByteKey, int] = {}
         self._selected_abs_offsets: dict[str, set[int]] = {}
         self._interesting_abs_offsets: set[int] | None = None
         self._hex_shape: tuple[tuple[str, int], ...] = ()
         self._lines: list[Strip] = []
         self._line_map: list[_LineInfo] = []
+        self._hex_bg: Style = Style()
         self._rebuild_lines()
+
+    @property
+    def _changed_abs_offsets(self) -> set[int]:
+        """Legacy — absolute offsets across all groups (lossy for colliding offsets)."""
+        return {offset for _, offset in self._flash_cycles}
+
+    @property
+    def _changed_flash_keys(self) -> set[_ByteKey]:
+        return set(self._flash_cycles)
+
+    @staticmethod
+    def _flash_style_for(cycles: int) -> str | None:
+        if cycles >= 3:
+            return "bold #FF8800"
+        elif cycles == 2:
+            return "#FF8800"
+        elif cycles == 1:
+            return "dim #FF8800"
+        return None
+
+    # -- Styling -------------------------------------------------------------
+
+    def _update_hex_bg(self) -> None:
+        """Read the widget CSS background and cache as a Rich Style."""
+        c = self.styles.background
+        if c is not None:
+            self._hex_bg = Style.parse(f"on {c.hex}")
+        else:
+            self._hex_bg = Style()
+
+    def on_mount(self) -> None:
+        self._update_hex_bg()
 
     # -- Public API -----------------------------------------------------------
 
@@ -128,34 +169,37 @@ class HexDumpDisplay(Static):
         if old == offsets:
             return
         self._selected_abs_offsets[group_label] = offsets
-        affected = (old or set()) | offsets
-        self._rebuild_some_lines(self._lines_for_offsets(affected))
-        self._region_refresh(affected)
+        affected_abs = (old or set()) | offsets
+        affected_keys = {(group_label, o) for o in affected_abs}
+        self._rebuild_some_lines(self._lines_for_offsets(affected_keys))
+        self._region_refresh(affected_keys)
 
     def set_data(
         self,
         group_data: list[tuple[str, bytearray, int]],
-        changed_abs_offsets: set[int] | None = None,
+        changed_per_group: dict[str, set[int]] | None = None,
         interesting_abs_offsets: set[int] | None = None,
     ) -> None:
         self._group_data = group_data
-        self._changed_abs_offsets = changed_abs_offsets or set()
         self._interesting_abs_offsets = interesting_abs_offsets
         shape = tuple((label, len(d)) for label, d, _ in group_data)
         needs_layout = shape != self._hex_shape
         self._hex_shape = shape
-        self._rebuild_lines()
-        self.refresh(layout=needs_layout)
 
-    def clear_flash(self) -> None:
-        """Clear flash highlighting."""
-        if not self._changed_abs_offsets:
-            return
-        old = self._changed_abs_offsets
-        self._changed_abs_offsets = set()
-        affected = self._lines_for_offsets(old)
-        self._rebuild_some_lines(affected)
-        self._region_refresh(old)
+        new_changed: set[_ByteKey] = set()
+        if changed_per_group:
+            for label, offsets in changed_per_group.items():
+                new_changed.update((label, off) for off in offsets)
+        flash_affected = self._update_flash(new_changed)
+
+        # First data or shape change — full rebuild
+        if needs_layout or not self._lines or not self._line_map:
+            self._rebuild_lines()
+            self.refresh(layout=needs_layout)
+        elif new_changed or flash_affected:
+            affected_keys = new_changed | flash_affected
+            self._rebuild_some_lines(self._lines_for_offsets(affected_keys))
+            self._region_refresh(affected_keys)
 
     # -- Reactives ------------------------------------------------------------
 
@@ -178,14 +222,19 @@ class HexDumpDisplay(Static):
     # -- Line API rendering ---------------------------------------------------
 
     def _pad_width(self, strip: Strip) -> Strip:
-        """Extend a strip to widget width so background fills uniformly."""
+        """Extend a strip to widget width and fill all cells with background."""
         w = self.size.width
         if not w:
             return strip
         cur = strip.cell_length
-        if cur >= w:
-            return strip
-        return Strip([*strip._segments, Segment(" " * (w - cur))])
+        bg = self._hex_bg
+        segs = []
+        for seg in strip._segments:
+            s = (seg.style + bg) if seg.style else bg
+            segs.append(Segment(seg.text, s))
+        if cur < w:
+            segs.append(Segment(" " * (w - cur), bg))
+        return Strip(segs)
 
     def render_line(self, y: int) -> Strip:
         if self.collapsed:
@@ -211,30 +260,68 @@ class HexDumpDisplay(Static):
                 result.append(seg.text, seg.style or "")
         return result
 
+    # -- Flash cycle management -----------------------------------------------
+
+    def _update_flash(self, new_changed: set[_ByteKey]) -> set[_ByteKey]:
+        """Advance flash state by one poll cycle.
+
+        *new_changed* holds the bytes that differ from the previous poll.
+        Every changed byte gets a fresh counter.  Unchanged bytes
+        count down and expire.  No re-change blink-off.
+        """
+        affected: set[_ByteKey] = set()
+
+        for key in new_changed:
+            was_active = key in self._flash_cycles
+            self._flash_cycles[key] = self.FLASH_DURATION
+            if not was_active:
+                affected.add(key)
+
+        for key in list(self._flash_cycles.keys()):
+            if key not in new_changed:
+                self._flash_cycles[key] -= 1
+                if self._flash_cycles[key] <= 0:
+                    del self._flash_cycles[key]
+                    affected.add(key)
+
+        return affected
+
     # -- Helpers --------------------------------------------------------------
 
-    def _region_refresh(self, offsets: set[int]) -> None:
-        """Refresh the smallest region covering lines that contain *offsets*."""
-        indices = self._lines_for_offsets(offsets)
-        if not indices:
+    def _region_refresh(self, keys: set[_ByteKey]) -> None:
+        """Refresh contiguous blocks of affected lines only."""
+        raw = sorted(self._lines_for_offsets(keys))
+        if not raw:
             return
         w = self.size.width or 80
-        m, M = min(indices), max(indices)
-        self.refresh(Region(0, m, w, M - m + 1))
+        start = raw[0]
+        end = start
+        for idx in raw[1:]:
+            if idx == end + 1:
+                end = idx
+            else:
+                self.refresh(Region(0, start, w, end - start + 1))
+                start = idx
+                end = idx
+        self.refresh(Region(0, start, w, end - start + 1))
 
-    def _lines_for_offsets(self, offsets: set[int]) -> set[int]:
-        """Return indices of hex lines whose byte range overlaps *offsets*."""
-        if not offsets:
+    def _lines_for_offsets(self, keys: set[_ByteKey]) -> set[int]:
+        """Return indices of hex lines holding any of the bytes in *keys*.
+
+        Both the group label and the offset must match, so groups with the
+        same starting offset (e.g. EIP Input/Output) don't collide.
+        """
+        if not keys:
             return set()
         result: set[int] = set()
         for idx, info in enumerate(self._line_map):
             if info.byte_start == -1:
                 continue
-            _, data, group_start = self._group_data[info.group_idx]
+            group_label, data, group_start = self._group_data[info.group_idx]
             abs_start = group_start + info.byte_start
             chunk_len = min(16, len(data) - info.byte_start)
-            for off in offsets:
-                if abs_start <= off < abs_start + chunk_len:
+            for label, off in keys:
+                if label == group_label and abs_start <= off < abs_start + chunk_len:
                     result.add(idx)
                     break
         return result
@@ -261,7 +348,6 @@ class HexDumpDisplay(Static):
         chunk = data[byte_start:byte_start + 16]
         abs_line = start + byte_start
         group_selected = self._selected_abs_offsets.get(label, set())
-        changed = self._changed_abs_offsets
         interesting_abs = self._interesting_abs_offsets
 
         segs: list[Segment] = []
@@ -269,15 +355,26 @@ class HexDumpDisplay(Static):
 
         for j, b in enumerate(chunk):
             byte_abs = start + byte_start + j
+            flash_key = (label, byte_abs)
             pair = f"{b:02X}"
             interesting = interesting_abs is None or byte_abs in interesting_abs
 
-            if byte_abs in group_selected and byte_abs in changed:
-                style = Style.parse("bold reverse #FF8800")
+            if byte_abs in group_selected and flash_key in self._flash_cycles:
+                cycles = self._flash_cycles[flash_key]
+                fs = self._flash_style_for(cycles)
+                if fs:
+                    style = Style.parse(f"bold reverse {fs}")
+                else:
+                    style = Style.parse("bold reverse")
+            elif flash_key in self._flash_cycles:
+                cycles = self._flash_cycles[flash_key]
+                fs = self._flash_style_for(cycles)
+                if fs:
+                    style = Style.parse(fs)
+                else:
+                    style = Style()
             elif byte_abs in group_selected:
                 style = Style.parse("bold reverse")
-            elif byte_abs in changed:
-                style = Style.parse("bold #FF8800")
             elif not interesting:
                 style = Style.parse("dim")
             else:
@@ -555,6 +652,7 @@ class S7MonitorApp(App):
         height: auto;
         max-height: 24;
         margin: 0 0 1 0;
+        background: $surface;
     }
     HexDumpDisplay.expanded {
         max-height: 36;
@@ -626,7 +724,7 @@ class S7MonitorApp(App):
         self._row_keys: dict[int, str] = {}
         self._row_key_to_var: dict = {}
         self._previous_hex_data: dict[str, bytearray] = {}
-        self._flash_active: set[str] = set()
+        self._flash_cycles_var: dict[str, int] = {}
         self._tables: dict[str, DataTable] = {}
         self._hex_dump: HexDumpDisplay | None = None
 
@@ -837,15 +935,10 @@ class S7MonitorApp(App):
                 continue
             table._data[rk][ck] = value
             touched_rows.setdefault(table, set()).add(rk)
-        for table in touched_rows:
+        for table, rks in touched_rows.items():
             table._update_count += 1
-        # Throttle row refreshes to at most once per poll interval
-        now = time.monotonic()
-        if now - getattr(self, '_last_table_refresh', 0.0) > self._poll_interval:
-            self._last_table_refresh = now
-            for table, rks in touched_rows.items():
-                for rk in rks:
-                    table.refresh_row(table.get_row_index(rk))
+            for rk in rks:
+                table.refresh_row(table.get_row_index(rk))
 
     def _on_data_received(
         self,
@@ -858,6 +951,7 @@ class S7MonitorApp(App):
 
         # Build hex dump — use pre-computed changed offsets, no byte loop
         hex_groups: list[tuple[str, bytearray, int]] = []
+        changed_per_group: dict[str, set[int]] = {}
         all_changed_abs: set[int] = set()
         for group in self._read_groups:
             entry = results.get(group.key)
@@ -867,25 +961,30 @@ class S7MonitorApp(App):
             hex_groups.append((group.label, data, start))
             offsets = changed_offsets.get(group.key)
             if offsets:
+                changed_per_group[group.label] = offsets
                 all_changed_abs.update(offsets)
 
         all_interesting = self._all_interesting_abs or None
 
         hd = self._hex_dump
         assert hd is not None
-        # Skip hex dump refresh when nothing changed and no stale flash
-        if all_changed_abs or not hd._group_data:
-            hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
-        elif hd._changed_abs_offsets:
-            hd.clear_flash()
+        hd.set_data(hex_groups, changed_per_group or None, interesting_abs_offsets=all_interesting or None)
 
         # Update connection status
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.poll_count = self._poll_count
 
+        # Advance var flash counters (decrement all, expire at zero).
+        # Snapshot before so we can detect newly-expired specs.
+        was_flashing = set(self._flash_cycles_var)
+        for spec in list(self._flash_cycles_var):
+            self._flash_cycles_var[spec] -= 1
+            if self._flash_cycles_var[spec] <= 0:
+                del self._flash_cycles_var[spec]
+
         # Quick exit when nothing changed, no flash to clear, and
         # values already populated (don't skip first poll).
-        if not all_changed_abs and not self._flash_active and self._current_values:
+        if not all_changed_abs and not was_flashing and self._current_values:
             return
 
         # Update variable tables — only process variables in groups where
@@ -901,14 +1000,15 @@ class S7MonitorApp(App):
             if var_offsets is None:
                 continue
             if not is_first and not var_offsets:
-                # No byte changes — only process to clear flash
-                if var.spec not in self._flash_active:
+                # No byte changes — only refresh if flash still active
+                if var.spec not in was_flashing:
                     continue
             elif not is_first:
                 # Bytes changed — skip if this var's range doesn't overlap
                 var_end = var.offset + var.byte_size
                 if not any(var.offset <= o < var_end for o in var_offsets):
-                    continue
+                    if var.spec not in was_flashing:
+                        continue
 
             group_data = results.get(group_key)
             if group_data is None:
@@ -939,23 +1039,22 @@ class S7MonitorApp(App):
                         raw_hex=raw_hex,
                     ))
 
+                # Reset flash counter on actual value change
+                if changed:
+                    self._flash_cycles_var[var.spec] = HexDumpDisplay.FLASH_DURATION
+
+                # Build cell value with flash style
+                flashing = self._flash_cycles_var.get(var.spec, 0) > 0
                 row_key = self._row_keys.get(id(var))
                 if row_key is None:
                     continue
                 side = self._var_side(var)
                 table = self._tables[side]
-                if prev is None:
-                    cell_updates.append((table, row_key, self.COL_VALUE, formatted))
-                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.discard(var.spec)
-                elif changed:
+                if flashing:
                     cell_updates.append((table, row_key, self.COL_VALUE, Text(formatted, style="bold yellow")))
-                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.add(var.spec)
-                elif var.spec in self._flash_active:
+                else:
                     cell_updates.append((table, row_key, self.COL_VALUE, formatted))
-                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.discard(var.spec)
+                cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
 
             except Exception as e:
                 row_key = self._row_keys.get(id(var))

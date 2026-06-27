@@ -190,11 +190,67 @@ class TestHexFlash:
         """Changed bytes have _changed_abs_offsets and render shows the byte."""
         hd = HexDumpDisplay()
         data = bytearray([0x41, 0x42, 0x43])
-        hd.set_data([("DB1", data, 0)], changed_abs_offsets={1})
+        hd.set_data([("DB1", data, 0)], changed_per_group={"DB1": {1}})
         assert 1 in hd._changed_abs_offsets
         assert 0 not in hd._changed_abs_offsets
         rendered = hd.render()
         assert "42" in rendered.plain  # changed byte value shown
+
+    def test_data_and_flash_in_same_frame(self):
+        """set_data updates data bytes and flash highlight atomically — the
+        rendered line has both the new byte value and the flash style
+        simultaneously."""
+        hd = HexDumpDisplay()
+        # Initial data: bytes [0x41, 0x42, 0x43] at offset 0
+        hd.set_data([("DB1", bytearray([0x41, 0x42, 0x43]), 0)])
+        # Changed data: byte at offset 1 changed from 0x42 → 0xEE, others unchanged
+        hd.set_data([("DB1", bytearray([0x41, 0xEE, 0x43]), 0)], changed_per_group={"DB1": {1}})
+
+        # Line 0 = separator, line 1 = hex data for 3 bytes at offset 0
+        strip = hd.render_line(1)
+        # Find the segment for the changed byte "EE"
+        changed_segs = [s for s in strip._segments if "EE" in s.text]
+        assert changed_segs, "Changed byte 'EE' should be present in rendered output"
+        seg = changed_segs[0]
+        assert seg.style is not None
+        style_str = str(seg.style)
+        assert "ff8800" in style_str, f"Expected flash style 'ff8800' in {style_str!r}"
+
+        # Bytes that didn't change should NOT have flash style
+        unchanged_segs = [s for s in strip._segments if s.text.strip() == "41"]
+        for s in unchanged_segs:
+            if s.style is not None:
+                assert "ff8800" not in str(s.style)
+
+    def test_two_groups_no_cross_group_flash(self):
+        """Changing one group must not flash-style bytes in the other group."""
+        hd = HexDumpDisplay()
+        hd.set_data([
+            ("Input", bytearray(range(16)), 0),
+            ("Output", bytearray(range(16, 32)), 16),
+        ])
+        # Change only Output byte 1 (abs offset 17)
+        hd.set_data([
+            ("Input", bytearray(range(16)), 0),
+            ("Output", bytearray([0x10, 0xFF, *range(18, 32)]), 16),
+        ], changed_per_group={"Output": {17}})
+
+        # Output data at render_line(3) (sep=0, Input=1, sep=2, Output=3)
+        out = hd.render_line(3)
+        ff = [s for s in out._segments if "FF" in s.text]
+        assert ff, "Output byte FF should be in rendered output"
+        assert ff[0].style is not None
+        assert "ff8800" in str(ff[0].style)
+
+        # Input line (render_line 1) must NOT have any flash style
+        inp = hd.render_line(1)
+        for seg in inp._segments:
+            if seg.style is not None and "ff8800" in str(seg.style):
+                assert False, f"Input line has flash on {seg.text!r}"
+
+        # _lines_for_offsets must return only Output lines for Output byte 17
+        line_indices = hd._lines_for_offsets({("Output", 17)})
+        assert line_indices == {3}
 
     def test_flash_detected_in_on_data_received(self):
         """_on_data_received detects changed bytes across poll cycles."""
@@ -405,26 +461,29 @@ class TestRowKeyLookup:
         asyncio.run(run())
 
     def test_flash_clears_on_stable_value(self, app):
-        """Flash style is cleared on first unchanged poll after a change."""
+        """Flash fades over FLASH_DURATION cycles like the hex dump."""
         async def run():
             async with app.run_test() as pilot:
                 # Call 1: populate initial value
                 app._on_data_received({"DB1": (bytearray([0x00, 0x01]), 0)}, {"DB1": set()})
                 await pilot.pause()
 
+                table = app.query_one("#var-table-output", DataTable)
+                row_key = app._row_keys.get(id(app._variables[1]))  # DB1.Byte1
+
                 # Call 2: change value → flash applied
                 app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": {1}})
                 await pilot.pause()
-
-                table = app.query_one("#var-table-output", DataTable)
-                row_key = app._row_keys.get(id(app._variables[1]))  # DB1.Byte1
                 cell = table.get_cell(row_key, app.COL_VALUE)
                 assert isinstance(cell, Text)
 
-                # Call 3: same value → flash cleared (plain text restored)
-                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": set()})
-                await pilot.pause()
+                # Calls 3..N: unchanged value — flash persists for FLASH_DURATION cycles
+                from s7pymon.app import HexDumpDisplay
+                for _ in range(HexDumpDisplay.FLASH_DURATION):
+                    app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": set()})
+                    await pilot.pause()
 
+                # After FLASH_DURATION unchanged cycles, flash must be cleared
                 cell2 = table.get_cell(row_key, app.COL_VALUE)
                 assert not isinstance(cell2, Text)
 
