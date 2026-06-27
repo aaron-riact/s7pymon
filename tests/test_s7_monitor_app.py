@@ -391,6 +391,19 @@ class TestRowKeyLookup:
 
         asyncio.run(run())
 
+    def test_first_poll_populates_value(self, app):
+        """First _on_data_received populates cells (not '—')."""
+        async def run():
+            async with app.run_test() as pilot:
+                table = app.query_one("#var-table-output", DataTable)
+                app._on_data_received({"DB1": (bytearray([0x01, 0x00]), 0)})
+                await pilot.pause()
+                row_key = app._row_keys.get(id(app._variables[0]))
+                cell = table.get_cell(row_key, app.COL_VALUE)
+                assert cell != "—"
+
+        asyncio.run(run())
+
     def test_flash_clears_on_stable_value(self, app):
         """Flash style is cleared on first unchanged poll after a change."""
         async def run():
