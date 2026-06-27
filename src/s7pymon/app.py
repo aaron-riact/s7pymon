@@ -662,7 +662,12 @@ class S7MonitorApp(App):
             touched.add(table)
         for table in touched:
             table._update_count += 1
-            table.refresh()
+        # Throttle refresh to at most once per poll interval
+        now = time.monotonic()
+        if now - getattr(self, '_last_table_refresh', 0.0) > self._poll_interval:
+            self._last_table_refresh = now
+            for table in touched:
+                table.refresh()
 
     def _on_data_received(
         self,
