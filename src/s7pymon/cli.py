@@ -43,6 +43,7 @@ from .errors import dump_errors
 from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
 from .protocols import Connection, ConnectionConfig, DataSource
+from .field_vars import expand_field_vars
 from .rules import FollowRule, OutputRule, PulseRule, RulesEngine, ToggleRule
 from .variable import S7Area, DataType, S7Variable, Variable, compute_read_range
 
@@ -208,13 +209,20 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
         )
         connection = S7Connection(conn_config)
 
-    if cfg.variables:
+    if cfg.variables or cfg.field_vars:
         parsed_vars: list[Variable] = []
         for v in cfg.variables:
             try:
                 parsed_vars.append(parse_variable_arg(v))
             except ValueError as e:
                 raise RuntimeConfigError(f"Error parsing variable '{v}': {e}") from e
+
+        if cfg.field_vars:
+            try:
+                expanded = expand_field_vars(cfg.field_vars)
+            except ValueError as e:
+                raise RuntimeConfigError(str(e)) from e
+            parsed_vars.extend(expanded)
 
         if protocol == "s7" and cfg.db is not None:
             db_vars = [v for v in parsed_vars if isinstance(v, S7Variable) and v.area == S7Area.DB]
@@ -259,8 +267,11 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
     rules_engine = build_rules_engine(cfg.rules)
 
     log.debug("protocol=%s address=%s", protocol, final_address)
+    log.debug("variables=%d", len(parsed_vars))
     for g in read_groups:
         log.debug("read group source=%r start=%s size=%s", g.source, g.start, g.size)
+    if cfg.field_vars:
+        log.debug("field_vars present: %s", list(cfg.field_vars.keys()))
 
     return ResolvedRuntime(
         connection=connection,

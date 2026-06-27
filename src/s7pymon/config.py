@@ -36,6 +36,14 @@ Example EIP config file (eip-monitor.yaml):
         follow: EIP.Input.Byte0
       EIP.Output.Bit0.0:
         toggle: 2
+    field_vars:
+      EIP.Input:
+        base_register: 18178
+        register_width_bits: 16
+        fields:
+          - 18178:
+              - Bit0.0:heartbeat
+              - Bit0.1:machine_ready
 """
 
 from __future__ import annotations
@@ -75,6 +83,8 @@ class S7MonitorConfig:
     rpi_ms: int | None = None
     # Output rules (dict of target -> rule config)
     rules: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Field variable expansions (register-map dissection)
+    field_vars: dict[str, Any] = field(default_factory=dict)
     verbose: bool = False
 
     @classmethod
@@ -119,6 +129,7 @@ class S7MonitorConfig:
             output_size=raw.get("output_size"),
             rpi_ms=raw.get("rpi_ms"),
             rules=raw.get("rules", {}),
+            field_vars=raw.get("field_vars", {}),
             verbose=raw.get("verbose", False),
         )
 
