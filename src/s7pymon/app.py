@@ -646,7 +646,7 @@ class S7MonitorApp(App):
     def _apply_rules(self, buffers: dict[str, tuple[bytearray, int]]) -> None:
         if self._rules_engine is None:
             return
-        self._rules_engine.apply(self._connection, {})
+        self._rules_engine.apply(self._connection, {}, buffers)
 
     def trigger_pulse(self, target: str) -> None:
         if self._rules_engine is None:
@@ -687,33 +687,25 @@ class S7MonitorApp(App):
         self._current_data = results
         self._poll_count += 1
 
-        # Persist data for next poll's diff
+        # Persist data for next poll's diff (copy to isolate from
+        # connection buffer reuse)
         for group_key, (data, _) in results.items():
             self._previous_hex_data[group_key] = bytearray(data)
 
-        # Build hex dump — use pre-computed changed offsets, no byte loop
+        # Build hex groups for display
         hex_groups: list[tuple[str, bytearray, int]] = []
-        all_changed_abs: set[int] = set()
         for group in self._read_groups:
             entry = results.get(group.key)
             if entry is None:
                 continue
-            data, start = entry
-            hex_groups.append((group.label, data, start))
-            offsets = changed_offsets.get(group.key)
-            if offsets:
-                all_changed_abs.update(offsets)
+            hex_groups.append((group.label, *entry))
 
         all_interesting = self._all_interesting_abs or None
 
         hd = self._hex_dump
         assert hd is not None
-        # Skip hex dump refresh when nothing changed and no stale flash
-        if all_changed_abs or not hd._group_data:
-            hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
-        elif hd._changed_abs_offsets:
-            hd._changed_abs_offsets = set()
-            hd.refresh(layout=False)
+        # Update hex dump data without flash (empty changed offsets)
+        hd.set_data(hex_groups, set(), interesting_abs_offsets=all_interesting or None)
 
         # Update connection status
         conn_status = self.query_one("#conn-status", ConnectionStatus)
@@ -737,9 +729,8 @@ class S7MonitorApp(App):
             if var_offsets is None:
                 continue
             if not is_first and not var_offsets:
-                # No byte changes — only process to clear flash
-                if var.spec not in self._flash_active:
-                    continue
+                # No byte changes — skip (no flash to clear)
+                continue
             elif not is_first:
                 # Bytes changed — skip if this var's range doesn't overlap
                 var_end = var.offset + var.byte_size
@@ -780,18 +771,9 @@ class S7MonitorApp(App):
                     continue
                 side = self._var_side(var)
                 table = self._tables[side]
-                if prev is None:
+                if prev is None or changed:
                     cell_updates.append((table, row_key, self.COL_VALUE, formatted))
                     cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.discard(var.spec)
-                elif changed:
-                    cell_updates.append((table, row_key, self.COL_VALUE, Text(formatted, style="bold yellow")))
-                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.add(var.spec)
-                elif var.spec in self._flash_active:
-                    cell_updates.append((table, row_key, self.COL_VALUE, formatted))
-                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.discard(var.spec)
 
             except Exception as e:
                 row_key = self._row_keys.get(id(var))
