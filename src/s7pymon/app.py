@@ -515,6 +515,15 @@ class S7MonitorApp(App):
                 range(var.offset, var.offset + var.byte_size)
             )
 
+        # Pre-compute all interesting offsets for hex dump (config-derived, stable)
+        self._all_interesting_abs: set[int] = set()
+        for group in self._read_groups:
+            offsets = self._interesting_abs.get(group.key)
+            if offsets is not None:
+                self._all_interesting_abs.update(
+                    o for o in offsets if group.start <= o < group.start + group.size
+                )
+
         for var in self._variables:
             side = self._var_side(var)
             table = self._tables[side]
@@ -685,7 +694,6 @@ class S7MonitorApp(App):
         # Build hex dump — use pre-computed changed offsets, no byte loop
         hex_groups: list[tuple[str, bytearray, int]] = []
         all_changed_abs: set[int] = set()
-        all_interesting: set[int] = set()
         for group in self._read_groups:
             entry = results.get(group.key)
             if entry is None:
@@ -695,11 +703,8 @@ class S7MonitorApp(App):
             offsets = changed_offsets.get(group.key)
             if offsets:
                 all_changed_abs.update(offsets)
-            group_interesting = self._interesting_abs.get(group.key)
-            if group_interesting is not None:
-                all_interesting.update(
-                    o for o in group_interesting if start <= o < start + len(data)
-                )
+
+        all_interesting = self._all_interesting_abs or None
 
         hd = self._hex_dump
         assert hd is not None
