@@ -22,7 +22,7 @@ from textual.strip import Strip
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.geometry import Size
+from textual.geometry import Region, Size
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
@@ -96,6 +96,14 @@ class ConnectionStatus(Static):
         return result
 
 
+@dataclass
+class _LineInfo:
+    """Metadata for a cached hex-dump line."""
+    label: str
+    group_idx: int
+    byte_start: int  # -1 for separator lines
+
+
 class HexDumpDisplay(Static):
     """Live hex dump of read group contents using the Line API."""
 
@@ -110,16 +118,19 @@ class HexDumpDisplay(Static):
         self._interesting_abs_offsets: set[int] | None = None
         self._hex_shape: tuple[tuple[str, int], ...] = ()
         self._lines: list[Strip] = []
+        self._line_map: list[_LineInfo] = []
         self._rebuild_lines()
 
     # -- Public API -----------------------------------------------------------
 
     def set_selected_offsets(self, group_label: str, offsets: set[int]) -> None:
-        if self._selected_abs_offsets.get(group_label) == offsets:
+        old = self._selected_abs_offsets.get(group_label)
+        if old == offsets:
             return
         self._selected_abs_offsets[group_label] = offsets
-        self._rebuild_lines()
-        self.refresh()
+        affected = (old or set()) | offsets
+        self._rebuild_some_lines(self._lines_for_offsets(affected))
+        self._region_refresh(affected)
 
     def set_data(
         self,
@@ -140,9 +151,11 @@ class HexDumpDisplay(Static):
         """Clear flash highlighting."""
         if not self._changed_abs_offsets:
             return
+        old = self._changed_abs_offsets
         self._changed_abs_offsets = set()
-        self._rebuild_lines()
-        self.refresh()
+        affected = self._lines_for_offsets(old)
+        self._rebuild_some_lines(affected)
+        self._region_refresh(old)
 
     # -- Reactives ------------------------------------------------------------
 
@@ -198,21 +211,118 @@ class HexDumpDisplay(Static):
                 result.append(seg.text, seg.style or "")
         return result
 
+    # -- Helpers --------------------------------------------------------------
+
+    def _region_refresh(self, offsets: set[int]) -> None:
+        """Refresh the smallest region covering lines that contain *offsets*."""
+        indices = self._lines_for_offsets(offsets)
+        if not indices:
+            return
+        w = self.size.width or 80
+        m, M = min(indices), max(indices)
+        self.refresh(Region(0, m, w, M - m + 1))
+
+    def _lines_for_offsets(self, offsets: set[int]) -> set[int]:
+        """Return indices of hex lines whose byte range overlaps *offsets*."""
+        if not offsets:
+            return set()
+        result: set[int] = set()
+        for idx, info in enumerate(self._line_map):
+            if info.byte_start == -1:
+                continue
+            _, data, group_start = self._group_data[info.group_idx]
+            abs_start = group_start + info.byte_start
+            chunk_len = min(16, len(data) - info.byte_start)
+            for off in offsets:
+                if abs_start <= off < abs_start + chunk_len:
+                    result.add(idx)
+                    break
+        return result
+
+    def _rebuild_some_lines(self, indices: set[int]) -> None:
+        """Rebuild only the given line indices from current state."""
+        for idx in indices:
+            info = self._line_map[idx]
+            if info.byte_start == -1:
+                self._lines[idx] = self._build_separator(info.label)
+            else:
+                _, data, start = self._group_data[info.group_idx]
+                self._lines[idx] = self._build_hex_line(info.label, data, start, info.byte_start)
+
+    def _build_separator(self, label: str) -> Strip:
+        sep = f"  ─── {label} "
+        padding = "─" * max(0, 62 - len(sep) + 2)
+        return Strip([
+            Segment(sep, Style.parse("bold cyan")),
+            Segment(padding, Style.parse("dim cyan")),
+        ])
+
+    def _build_hex_line(self, label: str, data: bytearray, start: int, byte_start: int) -> Strip:
+        chunk = data[byte_start:byte_start + 16]
+        abs_line = start + byte_start
+        group_selected = self._selected_abs_offsets.get(label, set())
+        changed = self._changed_abs_offsets
+        interesting_abs = self._interesting_abs_offsets
+
+        segs: list[Segment] = []
+        segs.append(Segment(f"  {abs_line:04X} │ ", Style.parse("dim cyan")))
+
+        for j, b in enumerate(chunk):
+            byte_abs = start + byte_start + j
+            pair = f"{b:02X}"
+            interesting = interesting_abs is None or byte_abs in interesting_abs
+
+            if byte_abs in group_selected and byte_abs in changed:
+                style = Style.parse("bold reverse #FF8800")
+            elif byte_abs in group_selected:
+                style = Style.parse("bold reverse")
+            elif byte_abs in changed:
+                style = Style.parse("bold #FF8800")
+            elif not interesting:
+                style = Style.parse("dim")
+            else:
+                style = Style()
+
+            segs.append(Segment(pair, style))
+
+            if j == 7 and len(chunk) > 8:
+                segs.append(Segment("  "))
+            elif j < len(chunk) - 1:
+                segs.append(Segment(" "))
+
+        remaining = 16 - len(chunk)
+        if remaining > 0:
+            hex_width = len(chunk) * 3 - 1
+            if len(chunk) > 8:
+                hex_width += 1
+            pad = 48 - hex_width
+            if pad > 0:
+                segs.append(Segment(" " * pad))
+
+        segs.append(Segment(" │ ", Style.parse("dim cyan")))
+        for b in chunk:
+            segs.append(Segment(chr(b) if 32 <= b < 127 else "·"))
+
+        return Strip(segs)
+
     # -- Line cache -----------------------------------------------------------
 
     def _rebuild_lines(self) -> None:
         if self.collapsed:
             self._lines = []
+            self._line_map = []
             return
 
         if not self._group_data:
             self._lines = [Strip([Segment("  No data yet")])]
+            self._line_map = [_LineInfo("", 0, -1)]
             return
 
         lines: list[Strip] = []
+        line_map: list[_LineInfo] = []
         interesting_abs = self._interesting_abs_offsets
 
-        for label, data, start in self._group_data:
+        for gidx, (label, data, start) in enumerate(self._group_data):
             group_selected = self._selected_abs_offsets.get(label, set())
             changed = self._changed_abs_offsets
             group_rendered = False
@@ -226,59 +336,19 @@ class HexDumpDisplay(Static):
                         continue
 
                 if not group_rendered:
-                    sep = f"  ─── {label} "
-                    padding = "─" * max(0, 62 - len(sep) + 2)
-                    lines.append(Strip([
-                        Segment(sep, Style.parse("bold cyan")),
-                        Segment(padding, Style.parse("dim cyan")),
-                    ]))
+                    lines.append(self._build_separator(label))
+                    line_map.append(_LineInfo(label, gidx, -1))
                     group_rendered = True
 
-                segs: list[Segment] = []
-                segs.append(Segment(f"  {abs_line:04X} │ ", Style.parse("dim cyan")))
-
-                for j, b in enumerate(chunk):
-                    byte_abs = start + i + j
-                    pair = f"{b:02X}"
-                    interesting = interesting_abs is None or byte_abs in interesting_abs
-
-                    if byte_abs in group_selected and byte_abs in changed:
-                        style = Style.parse("bold reverse #FF8800")
-                    elif byte_abs in group_selected:
-                        style = Style.parse("bold reverse")
-                    elif byte_abs in changed:
-                        style = Style.parse("bold #FF8800")
-                    elif not interesting:
-                        style = Style.parse("dim")
-                    else:
-                        style = Style()
-
-                    segs.append(Segment(pair, style))
-
-                    if j == 7 and len(chunk) > 8:
-                        segs.append(Segment("  "))
-                    elif j < len(chunk) - 1:
-                        segs.append(Segment(" "))
-
-                remaining = 16 - len(chunk)
-                if remaining > 0:
-                    hex_width = len(chunk) * 3 - 1
-                    if len(chunk) > 8:
-                        hex_width += 1
-                    pad = 48 - hex_width
-                    if pad > 0:
-                        segs.append(Segment(" " * pad))
-
-                segs.append(Segment(" │ ", Style.parse("dim cyan")))
-                for b in chunk:
-                    segs.append(Segment(chr(b) if 32 <= b < 127 else "·"))
-
-                lines.append(Strip(segs))
+                lines.append(self._build_hex_line(label, data, start, i))
+                line_map.append(_LineInfo(label, gidx, i))
 
         if not lines:
             lines.append(Strip([Segment("  No interesting data in this range", Style.parse("dim italic"))]))
+            line_map.append(_LineInfo("", 0, -1))
 
         self._lines = lines
+        self._line_map = line_map
 
 class EditVariableScreen(ModalScreen[str | None]):
     """Modal dialog for editing a variable value."""
