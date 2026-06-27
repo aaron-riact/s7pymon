@@ -101,6 +101,7 @@ class HexDumpDisplay(Static):
         self._group_data: list[tuple[str, bytearray, int]] = []
         self._changed_abs_offsets: set[int] = set()
         self._selected_abs_offsets: dict[str, set[int]] = {}
+        self._interesting_abs_offsets: set[int] | None = None
 
     def set_selected_offsets(self, group_label: str, offsets: set[int]) -> None:
         if self._selected_abs_offsets.get(group_label) == offsets:
@@ -115,9 +116,11 @@ class HexDumpDisplay(Static):
         self,
         group_data: list[tuple[str, bytearray, int]],
         changed_abs_offsets: set[int] | None = None,
+        interesting_abs_offsets: set[int] | None = None,
     ) -> None:
         self._group_data = group_data
         self._changed_abs_offsets = changed_abs_offsets or set()
+        self._interesting_abs_offsets = interesting_abs_offsets
         self.refresh(layout=True)
 
     def render(self) -> Text:
@@ -145,6 +148,7 @@ class HexDumpDisplay(Static):
                 for j, b in enumerate(chunk):
                     byte_abs = start + i + j
                     pair = f"{b:02X}"
+                    interesting = self._interesting_abs_offsets is None or byte_abs in self._interesting_abs_offsets
                     group_selected = self._selected_abs_offsets.get(label, set())
                     if byte_abs in group_selected and byte_abs in self._changed_abs_offsets:
                         result.append(Text(pair, style="bold reverse #FF8800"))
@@ -152,6 +156,8 @@ class HexDumpDisplay(Static):
                         result.append(Text(pair, style="bold reverse"))
                     elif byte_abs in self._changed_abs_offsets:
                         result.append(Text(pair, style="bold #FF8800"))
+                    elif not interesting:
+                        result.append(Text(pair, style="dim"))
                     else:
                         result.append(pair)
                     if j == 7 and len(chunk) > 8:
@@ -497,6 +503,13 @@ class S7MonitorApp(App):
         self._tables["input"] = self._setup_table("var-table-input")
         self._tables["output"] = self._setup_table("var-table-output")
 
+        self._interesting_abs: dict[str, set[int]] = {}
+        for var in self._variables:
+            key = self._group_key_for_var(var)
+            self._interesting_abs.setdefault(key, set()).update(
+                range(var.offset, var.offset + var.byte_size)
+            )
+
         for var in self._variables:
             side = self._var_side(var)
             table = self._tables[side]
@@ -649,6 +662,7 @@ class S7MonitorApp(App):
         # Build hex dump with byte-level flash detection
         hex_groups: list[tuple[str, bytearray, int]] = []
         changed_abs_offsets: set[int] = set()
+        all_interesting: set[int] = set()
         for group in self._read_groups:
             if group.key in results:
                 data, start = results[group.key]
@@ -660,9 +674,14 @@ class S7MonitorApp(App):
                             changed_abs_offsets.add(start + k)
                 self._previous_hex_data[group.key] = bytearray(data)
                 hex_groups.append((group.label, data, start))
+                group_interesting = self._interesting_abs.get(group.key)
+                if group_interesting is not None:
+                    all_interesting.update(
+                        o for o in group_interesting if start <= o < start + len(data)
+                    )
         hd = self._hex_dump
         assert hd is not None
-        hd.set_data(hex_groups, changed_abs_offsets)
+        hd.set_data(hex_groups, changed_abs_offsets, interesting_abs_offsets=all_interesting or None)
 
         # Update variable tables
         self._previous_values = dict(self._current_values)
