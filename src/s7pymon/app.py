@@ -96,6 +96,7 @@ class HexDumpDisplay(Static):
     """Live hex dump of read group contents."""
 
     collapsed: reactive[bool] = reactive(False)
+    show_interesting_only: reactive[bool] = reactive(False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -112,6 +113,9 @@ class HexDumpDisplay(Static):
         self.refresh()
 
     def watch_collapsed(self, old_val: bool, new_val: bool) -> None:
+        self.refresh(layout=True)
+
+    def watch_show_interesting_only(self, old_val: bool, new_val: bool) -> None:
         self.refresh(layout=True)
 
     def set_data(
@@ -138,20 +142,27 @@ class HexDumpDisplay(Static):
         result = Text()
         interesting_abs = self._interesting_abs_offsets
         for gidx, (label, data, start) in enumerate(self._group_data):
-            if gidx > 0:
-                result.append("\n")
-
-            sep = f"  ─── {label} "
-            result.append(sep, style="bold cyan")
-            result.append("─" * max(0, 62 - len(sep) + 2), style="dim cyan")
-            result.append("\n")
-
             group_selected = self._selected_abs_offsets.get(label, set())
             changed = self._changed_abs_offsets
+            group_rendered = False
 
             for i in range(0, len(data), 16):
                 chunk = data[i : i + 16]
                 abs_line = start + i
+
+                if self.show_interesting_only and interesting_abs is not None:
+                    if interesting_abs.isdisjoint(range(abs_line, abs_line + len(chunk))):
+                        continue
+
+                if not group_rendered:
+                    if result:
+                        result.append("\n")
+                    sep = f"  ─── {label} "
+                    result.append(sep, style="bold cyan")
+                    result.append("─" * max(0, 62 - len(sep) + 2), style="dim cyan")
+                    result.append("\n")
+                    group_rendered = True
+
                 result.append(f"  {abs_line:04X} │ ", style="dim cyan")
 
                 for j, b in enumerate(chunk):
@@ -185,11 +196,12 @@ class HexDumpDisplay(Static):
                 for b in chunk:
                     result.append(chr(b) if 32 <= b < 127 else "·")
 
-                if gidx < len(self._group_data) - 1 or i + 16 < len(data):
-                    result.append("\n")
+                result.append("\n")
+
+        if not result:
+            return Text("  No interesting data in this range", style="dim italic")
 
         return result
-
 
 class EditVariableScreen(ModalScreen[str | None]):
     """Modal dialog for editing a variable value."""
@@ -431,6 +443,7 @@ class S7MonitorApp(App):
         Binding("c", "reconnect", "Reconnect"),
         Binding("w", "cycle_write_mode", "Write Mode"),
         Binding("h", "toggle_hex", "Hex Dump"),
+        Binding("i", "toggle_hex_interesting", "Interesting"),
     ]
 
     paused: reactive[bool] = reactive(False)
@@ -1078,6 +1091,17 @@ class S7MonitorApp(App):
             log.write("[dim]Hex dump collapsed[/dim]")
         else:
             log.write("[dim]Hex dump expanded[/dim]")
+
+    def action_toggle_hex_interesting(self) -> None:
+        """Toggle hex dump interesting-only mode."""
+        hd = self._hex_dump
+        assert hd is not None
+        hd.show_interesting_only = not hd.show_interesting_only
+        log = self.query_one("#log-panel", RichLog)
+        if hd.show_interesting_only:
+            log.write("[dim]Showing interesting rows only[/dim]")
+        else:
+            log.write("[dim]Showing all hex rows[/dim]")
 
     def action_reconnect(self) -> None:
         """Reconnect to the PLC."""
