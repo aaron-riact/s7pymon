@@ -599,12 +599,33 @@ class S7MonitorApp(App):
         if not self._connection.connected:
             return
         try:
+            # Snapshot previous data before I/O — thread-safe copy of references
+            old_hex_data = self._previous_hex_data.copy()
+
             results: dict[str, tuple[bytearray, int]] = {}
             for group in self._read_groups:
                 result = self._connection.read_source(group.source, group.start, group.size)
                 results[group.key] = (result.data, group.start)
 
-            self.call_from_thread(self._on_data_received, results)
+            # Compute per-group changed offsets in the worker thread
+            changed_offsets: dict[str, set[int]] = {}
+            for group in self._read_groups:
+                entry = results.get(group.key)
+                if entry is None:
+                    continue
+                data, start = entry
+                prev = old_hex_data.get(group.key)
+                if prev is not None:
+                    offsets: set[int] = set()
+                    min_len = min(len(prev), len(data))
+                    for k in range(min_len):
+                        if prev[k] != data[k]:
+                            offsets.add(start + k)
+                    changed_offsets[group.key] = offsets
+                else:
+                    changed_offsets[group.key] = set()
+
+            self.call_from_thread(self._on_data_received, results, changed_offsets)
 
             if self._rules_engine is not None:
                 self._apply_rules(results)
@@ -643,41 +664,73 @@ class S7MonitorApp(App):
             table._update_count += 1
             table.refresh()
 
-    def _on_data_received(self, results: dict[str, tuple[bytearray, int]]) -> None:
+    def _on_data_received(
+        self,
+        results: dict[str, tuple[bytearray, int]],
+        changed_offsets: dict[str, set[int]],
+    ) -> None:
         """Process received data from all groups on the main thread."""
         self._current_data = results
         self._poll_count += 1
 
-        # Build hex dump with byte-level flash detection
+        # Persist data for next poll's diff
+        for group_key, (data, _) in results.items():
+            self._previous_hex_data[group_key] = bytearray(data)
+
+        # Build hex dump — use pre-computed changed offsets, no byte loop
         hex_groups: list[tuple[str, bytearray, int]] = []
-        changed_abs_offsets: set[int] = set()
+        all_changed_abs: set[int] = set()
         all_interesting: set[int] = set()
         for group in self._read_groups:
-            if group.key in results:
-                data, start = results[group.key]
-                prev_data = self._previous_hex_data.get(group.key)
-                if prev_data is not None:
-                    min_len = min(len(prev_data), len(data))
-                    for k in range(min_len):
-                        if prev_data[k] != data[k]:
-                            changed_abs_offsets.add(start + k)
-                self._previous_hex_data[group.key] = bytearray(data)
-                hex_groups.append((group.label, data, start))
-                group_interesting = self._interesting_abs.get(group.key)
-                if group_interesting is not None:
-                    all_interesting.update(
-                        o for o in group_interesting if start <= o < start + len(data)
-                    )
+            entry = results.get(group.key)
+            if entry is None:
+                continue
+            data, start = entry
+            hex_groups.append((group.label, data, start))
+            offsets = changed_offsets.get(group.key)
+            if offsets:
+                all_changed_abs.update(offsets)
+            group_interesting = self._interesting_abs.get(group.key)
+            if group_interesting is not None:
+                all_interesting.update(
+                    o for o in group_interesting if start <= o < start + len(data)
+                )
+
         hd = self._hex_dump
         assert hd is not None
-        hd.set_data(hex_groups, changed_abs_offsets, interesting_abs_offsets=all_interesting or None)
+        hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
 
-        # Update variable tables — batch cell updates to minimise DataTable churn
+        # Update connection status
+        conn_status = self.query_one("#conn-status", ConnectionStatus)
+        conn_status.poll_count = self._poll_count
+
+        # Quick exit if no data changed at the byte level and
+        # we already have values populated (don't skip first poll)
+        if not changed_offsets and self._current_values:
+            return
+
+        # Update variable tables — only process variables in groups where
+        # bytes actually changed.  On first poll (_current_values is empty)
+        # process all variables unconditionally.
+        is_first = not self._current_values
         self._previous_values = dict(self._current_values)
         cell_updates: list[tuple[DataTable, str, str, object]] = []
 
         for var in self._variables:
             group_key = self._group_key_for_var(var)
+            var_offsets = changed_offsets.get(group_key)
+            if var_offsets is None:
+                continue
+            if not is_first and not var_offsets:
+                # No byte changes — only process to clear flash
+                if var.spec not in self._flash_active:
+                    continue
+            elif not is_first:
+                # Bytes changed — skip if this var's range doesn't overlap
+                var_end = var.offset + var.byte_size
+                if not any(var.offset <= o < var_end for o in var_offsets):
+                    continue
+
             group_data = results.get(group_key)
             if group_data is None:
                 continue
@@ -687,12 +740,10 @@ class S7MonitorApp(App):
                 formatted = var.format_value(value)
                 self._current_values[var.spec] = formatted
 
-                # Get raw hex for this variable's bytes
                 local_offset = var.offset - data_start
                 raw_bytes = data[local_offset : local_offset + var.byte_size]
                 raw_hex = " ".join(f"{b:02X}" for b in raw_bytes)
 
-                # Determine change styling
                 prev = self._previous_values.get(var.spec)
                 changed = prev is not None and prev != formatted
 
@@ -709,7 +760,6 @@ class S7MonitorApp(App):
                         raw_hex=raw_hex,
                     ))
 
-                # Queue cell update (applied in batch later)
                 row_key = self._row_keys.get(id(var))
                 if row_key is None:
                     continue
@@ -735,10 +785,6 @@ class S7MonitorApp(App):
                     cell_updates.append((self._tables[side], row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red")))
 
         self._apply_cell_updates(cell_updates)
-
-        # Update connection status poll count
-        conn_status = self.query_one("#conn-status", ConnectionStatus)
-        conn_status.poll_count = self._poll_count
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         var = self._row_key_to_var.get(event.row_key.value)

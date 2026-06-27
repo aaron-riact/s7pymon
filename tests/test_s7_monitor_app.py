@@ -206,10 +206,10 @@ class TestHexFlash:
             async with app.run_test() as pilot:
                 hex_dump = app.query_one("#hex-dump", HexDumpDisplay)
                 # First poll — no previous data, so no flash
-                app._on_data_received({"DB1": (bytearray([0xAA, 0xBB, 0xCC, 0xDD]), 0)})
+                app._on_data_received({"DB1": (bytearray([0xAA, 0xBB, 0xCC, 0xDD]), 0)}, {"DB1": set()})
                 assert len(hex_dump._changed_abs_offsets) == 0
                 # Second poll — byte 1 changed (0xBB → 0xEE)
-                app._on_data_received({"DB1": (bytearray([0xAA, 0xEE, 0xCC, 0xDD]), 0)})
+                app._on_data_received({"DB1": (bytearray([0xAA, 0xEE, 0xCC, 0xDD]), 0)}, {"DB1": {1}})
                 assert 1 in hex_dump._changed_abs_offsets
                 assert 0 not in hex_dump._changed_abs_offsets
                 assert 2 not in hex_dump._changed_abs_offsets
@@ -396,7 +396,7 @@ class TestRowKeyLookup:
         async def run():
             async with app.run_test() as pilot:
                 table = app.query_one("#var-table-output", DataTable)
-                app._on_data_received({"DB1": (bytearray([0x01, 0x00]), 0)})
+                app._on_data_received({"DB1": (bytearray([0x01, 0x00]), 0)}, {"DB1": set()})
                 await pilot.pause()
                 row_key = app._row_keys.get(id(app._variables[0]))
                 cell = table.get_cell(row_key, app.COL_VALUE)
@@ -409,11 +409,11 @@ class TestRowKeyLookup:
         async def run():
             async with app.run_test() as pilot:
                 # Call 1: populate initial value
-                app._on_data_received({"DB1": (bytearray([0x00, 0x01]), 0)})
+                app._on_data_received({"DB1": (bytearray([0x00, 0x01]), 0)}, {"DB1": set()})
                 await pilot.pause()
 
                 # Call 2: change value → flash applied
-                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)})
+                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": {1}})
                 await pilot.pause()
 
                 table = app.query_one("#var-table-output", DataTable)
@@ -422,7 +422,7 @@ class TestRowKeyLookup:
                 assert isinstance(cell, Text)
 
                 # Call 3: same value → flash cleared (plain text restored)
-                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)})
+                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": set()})
                 await pilot.pause()
 
                 cell2 = table.get_cell(row_key, app.COL_VALUE)
