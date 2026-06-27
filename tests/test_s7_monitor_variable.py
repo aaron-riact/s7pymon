@@ -2,6 +2,7 @@ import struct
 import pytest
 
 from s7pymon.variable import (
+    ByteOrder,
     S7Area,
     DataType,
     S7Variable,
@@ -583,3 +584,48 @@ class TestEIPVariableParsing:
     def test_eip_word_spec_shows_decimal(self):
         v = S7Variable.parse("EIP.Input.Word0.f")
         assert v.spec == "EIP.Input.Word0.15"
+
+    def test_eip_word_le_suffix(self):
+        v = S7Variable.parse("EIP.Input.Word0.le")
+        assert v.byte_order == ByteOrder.LITTLE
+
+    def test_eip_word_be_suffix_override(self):
+        v = S7Variable.parse("EIP.Input.Word0.be")
+        assert v.byte_order == ByteOrder.BIG
+
+    def test_eip_word_little_suffix(self):
+        v = S7Variable.parse("EIP.Input.Word0.little")
+        assert v.byte_order == ByteOrder.LITTLE
+
+    def test_eip_word_big_suffix(self):
+        v = S7Variable.parse("EIP.Input.Word0.big")
+        assert v.byte_order == ByteOrder.BIG
+
+    def test_eip_word_bit_with_le_suffix(self):
+        v = S7Variable.parse("EIP.Input.Word0.f.le")
+        assert v.extra == 15
+        assert v.byte_order == ByteOrder.LITTLE
+
+    def test_db_word_be_suffix(self):
+        v = S7Variable.parse("DB1.Word0.be")
+        assert v.byte_order == ByteOrder.BIG
+
+    def test_db_word_le_suffix_override(self):
+        v = S7Variable.parse("DB1.Word0.le")
+        assert v.byte_order == ByteOrder.LITTLE
+
+    def test_area_word_be_suffix(self):
+        v = S7Variable.parse("AB.Word0.be")
+        assert v.byte_order == ByteOrder.BIG
+
+    def test_eip_byte_ignores_suffix(self):
+        v = S7Variable.parse("EIP.Input.Byte0.le")
+        assert v.type == DataType.BYTE
+        assert v.byte_order == ByteOrder.LITTLE
+
+    def test_eip_word_encode_be_decodes_le(self):
+        v_be = S7Variable.parse("EIP.Input.Word0.be")
+        v_le = S7Variable.parse("EIP.Input.Word0.le")
+        data = b"\x01\x02"
+        assert v_be.decode(data) == 0x0102
+        assert v_le.decode(data) == 0x0201
