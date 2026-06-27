@@ -15,6 +15,7 @@ from s7pymon.variable import (
 class TestS7VariableParsing:
     def test_parse_byte(self):
         v = S7Variable.parse("DB200.Byte0")
+        assert isinstance(v, S7Variable)
         assert v.db == 200
         assert v.type == DataType.BYTE
         assert v.offset == 0
@@ -23,6 +24,7 @@ class TestS7VariableParsing:
 
     def test_parse_int(self):
         v = S7Variable.parse("DB210.Int4")
+        assert isinstance(v, S7Variable)
         assert v.db == 210
         assert v.type == DataType.INT
         assert v.offset == 4
@@ -30,6 +32,7 @@ class TestS7VariableParsing:
 
     def test_parse_dint(self):
         v = S7Variable.parse("DB100.DInt8")
+        assert isinstance(v, S7Variable)
         assert v.db == 100
         assert v.type == DataType.DINT
         assert v.offset == 8
@@ -37,6 +40,7 @@ class TestS7VariableParsing:
 
     def test_parse_word(self):
         v = S7Variable.parse("DB5.Word2")
+        assert isinstance(v, S7Variable)
         assert v.db == 5
         assert v.type == DataType.WORD
         assert v.offset == 2
@@ -81,6 +85,7 @@ class TestS7VariableParsing:
 
     def test_parse_case_insensitive(self):
         v = S7Variable.parse("db200.byte0")
+        assert isinstance(v, S7Variable)
         assert v.db == 200
         assert v.type == DataType.BYTE
 
@@ -137,6 +142,7 @@ class TestS7VariableDecode:
         v = S7Variable.parse("DB1.Real0")
         raw = struct.pack(">f", 3.14)
         result = v.decode(raw)
+        assert isinstance(result, float)
         assert abs(result - 3.14) < 0.001
 
     def test_decode_bit_set(self):
@@ -236,7 +242,9 @@ class TestFormatAndParse:
 
     def test_parse_input_real(self):
         v = S7Variable.parse("DB1.Real0")
-        assert abs(v.parse_input("3.14") - 3.14) < 0.001
+        result = v.parse_input("3.14")
+        assert isinstance(result, float)
+        assert abs(result - 3.14) < 0.001
 
     def test_parse_input_string(self):
         v = S7Variable.parse("DB1.String0.10")
@@ -300,6 +308,7 @@ class TestExtractValue:
 class TestS7AreaParsing:
     def test_parse_eb(self):
         v = S7Variable.parse("EB.Byte0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.EB
         assert v.db == 0
         assert v.type == DataType.BYTE
@@ -308,24 +317,29 @@ class TestS7AreaParsing:
 
     def test_parse_ab(self):
         v = S7Variable.parse("AB.Byte2")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.AB
         assert v.spec == "AB.Byte2"
 
     def test_parse_mb(self):
         v = S7Variable.parse("MB.Byte0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.MB
 
     def test_parse_ct(self):
         v = S7Variable.parse("CT.Word0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.CT
         assert v.type == DataType.WORD
 
     def test_parse_tm(self):
         v = S7Variable.parse("TM.Word0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.TM
 
     def test_parse_eb_bit(self):
         v = S7Variable.parse("EB.Bit0.3")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.EB
         assert v.type == DataType.BIT
         assert v.extra == 3
@@ -333,10 +347,12 @@ class TestS7AreaParsing:
 
     def test_parse_eb_case_insensitive(self):
         v = S7Variable.parse("eb.byte0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.EB
 
     def test_db_default_area(self):
         v = S7Variable.parse("DB200.Byte0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.DB
 
     def test_area_with_label(self):
