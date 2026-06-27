@@ -136,6 +136,7 @@ class HexDumpDisplay(Static):
             return Text("  No data yet")
 
         result = Text()
+        interesting_abs = self._interesting_abs_offsets
         for gidx, (label, data, start) in enumerate(self._group_data):
             if gidx > 0:
                 result.append("\n")
@@ -145,6 +146,9 @@ class HexDumpDisplay(Static):
             result.append("─" * max(0, 62 - len(sep) + 2), style="dim cyan")
             result.append("\n")
 
+            group_selected = self._selected_abs_offsets.get(label, set())
+            changed = self._changed_abs_offsets
+
             for i in range(0, len(data), 16):
                 chunk = data[i : i + 16]
                 abs_line = start + i
@@ -153,13 +157,12 @@ class HexDumpDisplay(Static):
                 for j, b in enumerate(chunk):
                     byte_abs = start + i + j
                     pair = f"{b:02X}"
-                    interesting = self._interesting_abs_offsets is None or byte_abs in self._interesting_abs_offsets
-                    group_selected = self._selected_abs_offsets.get(label, set())
-                    if byte_abs in group_selected and byte_abs in self._changed_abs_offsets:
+                    interesting = interesting_abs is None or byte_abs in interesting_abs
+                    if byte_abs in group_selected and byte_abs in changed:
                         result.append(Text(pair, style="bold reverse #FF8800"))
                     elif byte_abs in group_selected:
                         result.append(Text(pair, style="bold reverse"))
-                    elif byte_abs in self._changed_abs_offsets:
+                    elif byte_abs in changed:
                         result.append(Text(pair, style="bold #FF8800"))
                     elif not interesting:
                         result.append(Text(pair, style="dim"))
