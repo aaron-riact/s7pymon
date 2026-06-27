@@ -103,6 +103,7 @@ class HexDumpDisplay(Static):
         self._changed_abs_offsets: set[int] = set()
         self._selected_abs_offsets: dict[str, set[int]] = {}
         self._interesting_abs_offsets: set[int] | None = None
+        self._hex_shape: tuple[tuple[str, int], ...] = ()
 
     def set_selected_offsets(self, group_label: str, offsets: set[int]) -> None:
         if self._selected_abs_offsets.get(group_label) == offsets:
@@ -122,7 +123,10 @@ class HexDumpDisplay(Static):
         self._group_data = group_data
         self._changed_abs_offsets = changed_abs_offsets or set()
         self._interesting_abs_offsets = interesting_abs_offsets
-        self.refresh(layout=True)
+        shape = tuple((label, len(d)) for label, d, _ in group_data)
+        needs_layout = shape != self._hex_shape
+        self._hex_shape = shape
+        self.refresh(layout=needs_layout)
 
     def render(self) -> Text:
         if self.collapsed:
