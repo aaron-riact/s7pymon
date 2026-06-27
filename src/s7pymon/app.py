@@ -720,9 +720,9 @@ class S7MonitorApp(App):
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.poll_count = self._poll_count
 
-        # Quick exit if no data changed at the byte level and
-        # we already have values populated (don't skip first poll)
-        if not changed_offsets and self._current_values:
+        # Quick exit when nothing changed, no flash to clear, and
+        # values already populated (don't skip first poll).
+        if not all_changed_abs and not self._flash_active and self._current_values:
             return
 
         # Update variable tables — only process variables in groups where
