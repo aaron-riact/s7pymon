@@ -164,11 +164,23 @@ class HexDumpDisplay(Static):
 
     # -- Line API rendering ---------------------------------------------------
 
+    def _pad_width(self, strip: Strip) -> Strip:
+        """Extend a strip to widget width so background fills uniformly."""
+        w = self.size.width
+        if not w:
+            return strip
+        cur = strip.cell_length
+        if cur >= w:
+            return strip
+        return Strip([*strip._segments, Segment(" " * (w - cur))])
+
     def render_line(self, y: int) -> Strip:
         if self.collapsed:
-            return Strip([Segment("  ▸ hex dump (press h to expand)", Style.parse("dim cyan"))]) if y == 0 else Strip([])
+            return self._pad_width(
+                Strip([Segment("  ▸ hex dump (press h to expand)", Style.parse("dim cyan"))])
+            ) if y == 0 else Strip([])
         if y < len(self._lines):
-            return self._lines[y]
+            return self._pad_width(self._lines[y])
         return Strip([])
 
     # -- Fallback for tests ---------------------------------------------------
