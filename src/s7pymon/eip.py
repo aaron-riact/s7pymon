@@ -194,7 +194,7 @@ class EIPConnection(Connection):
 
     @staticmethod
     def _write_bytes_to_bits(
-        bits: list[bool], byte_offset: int, data: bytes
+        bits: list[bool], byte_offset: int, data: bytes | bytearray
     ) -> None:
         """Write bytes into a LSB-first bit list at a byte offset."""
         start = byte_offset * 8
