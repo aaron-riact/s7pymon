@@ -320,6 +320,11 @@ class Variable(ABC):
         """The data source this variable is read from and written to."""
 
     @property
+    @abstractmethod
+    def is_input(self) -> bool:
+        """True when the source is a process input: read here, written by the field."""
+
+    @property
     def display_name(self) -> str:
         return self.label or self.spec
 
@@ -428,6 +433,10 @@ class S7Variable(Variable):
             return DataSource.s7_db(self.db)
         return DataSource.s7_area(self.area.value)
 
+    @property
+    def is_input(self) -> bool:
+        return self.area == S7Area.EB
+
 
 @dataclass(frozen=True, kw_only=True)
 class EIPVariable(Variable):
@@ -446,6 +455,10 @@ class EIPVariable(Variable):
     @property
     def source(self) -> DataSource:
         return DataSource.eip(self.assembly)
+
+    @property
+    def is_input(self) -> bool:
+        return self.assembly.lower() == "input"
 
 
 _AREAS: dict[str, S7Area] = {str(a.value).lower(): a for a in S7Area}

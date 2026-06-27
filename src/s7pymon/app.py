@@ -351,6 +351,7 @@ class S7MonitorApp(App):
     """S7 PLC Data Block Monitor."""
 
     TITLE = "S7 Monitor"
+    HORIZONTAL_BREAKPOINTS = [(120, "two-column")]
 
     CSS = """
     Screen {
@@ -373,9 +374,19 @@ class S7MonitorApp(App):
     HexDumpDisplay.expanded {
         max-height: 36;
     }
-    #var-table {
+    #var-tables {
         height: 1fr;
         min-height: 5;
+    }
+    Screen.two-column #var-tables {
+        layout: horizontal;
+    }
+    #var-table-input, #var-table-output {
+        height: 1fr;
+        min-width: 30;
+    }
+    Screen.two-column #var-table-input, Screen.two-column #var-table-output {
+        width: 1fr;
     }
     #log-panel {
         height: 6;
@@ -435,7 +446,9 @@ class S7MonitorApp(App):
         yield ConnectionStatus(id="conn-status")
         with Vertical(id="main-container"):
             yield HexDumpDisplay(id="hex-dump")
-            yield DataTable(id="var-table")
+            with Vertical(id="var-tables"):
+                yield DataTable(id="var-table-input")
+                yield DataTable(id="var-table-output")
             yield RichLog(id="log-panel", highlight=True, markup=True)
         yield Footer()
 
@@ -447,9 +460,13 @@ class S7MonitorApp(App):
     COL_VALUE = "col_value"
     COL_RAW_HEX = "col_raw_hex"
 
-    def on_mount(self) -> None:
-        # Set up the variable table
-        table = self.query_one("#var-table", DataTable)
+    @staticmethod
+    def _var_side(var: Variable) -> str:
+        """Which table a variable belongs in: inputs on one, everything writable on the other."""
+        return "input" if var.is_input else "output"
+
+    def _setup_table(self, table_id: str) -> DataTable:
+        table = self.query_one(f"#{table_id}", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("Area", key=self.COL_AREA)
@@ -458,8 +475,15 @@ class S7MonitorApp(App):
         table.add_column("Offset", key=self.COL_OFFSET)
         table.add_column("Value", key=self.COL_VALUE)
         table.add_column("Raw Hex", key=self.COL_RAW_HEX)
+        return table
+
+    def on_mount(self) -> None:
+        input_table = self._setup_table("var-table-input")
+        output_table = self._setup_table("var-table-output")
 
         for var in self._variables:
+            side = self._var_side(var)
+            table = input_table if side == "input" else output_table
             row_key = f"var_{id(var)}"
             self._row_keys[id(var)] = row_key
             self._row_key_to_var[row_key] = var
@@ -623,9 +647,8 @@ class S7MonitorApp(App):
                 hex_groups.append((group.label, data, start))
         hex_dump.set_data(hex_groups, changed_abs_offsets)
 
-        # Update variable table
+        # Update variable tables
         self._previous_values = dict(self._current_values)
-        table = self.query_one("#var-table", DataTable)
 
         for var in self._variables:
             group_key = self._group_key_for_var(var)
@@ -668,6 +691,8 @@ class S7MonitorApp(App):
                 row_key = self._row_keys.get(id(var))
                 if row_key is None:
                     continue
+                side = self._var_side(var)
+                table = self.query_one(f"#var-table-{side}", DataTable)
                 # Update existing row values
                 table.update_cell(row_key, self.COL_VALUE, value_display)
                 table.update_cell(row_key, self.COL_RAW_HEX, raw_display)
@@ -675,6 +700,8 @@ class S7MonitorApp(App):
             except Exception as e:
                 row_key = self._row_keys.get(id(var))
                 if row_key is not None:
+                    side = self._var_side(var)
+                    table = self.query_one(f"#var-table-{side}", DataTable)
                     table.update_cell(row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
 
         # Update connection status poll count
@@ -693,12 +720,19 @@ class S7MonitorApp(App):
             return False
         return True
 
+    def _focused_table(self) -> DataTable | None:
+        for table_id in ("var-table-input", "var-table-output"):
+            table = self.query_one(f"#{table_id}", DataTable)
+            if table.has_focus:
+                return table
+        return None
+
     def action_edit_variable(self) -> None:
         """Open edit dialog for the selected variable."""
         if not self._check_write_allowed():
             return
-        table = self.query_one("#var-table", DataTable)
-        if table.row_count == 0:
+        table = self._focused_table()
+        if table is None or table.row_count == 0:
             return
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
         var = self._row_key_to_var.get(row_key.value)
@@ -711,7 +745,9 @@ class S7MonitorApp(App):
         """Handle the result of editing a variable."""
         if result is None:
             return  # Cancelled
-        table = self.query_one("#var-table", DataTable)
+        table = self._focused_table()
+        if table is None:
+            return
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
         var = self._row_key_to_var.get(row_key.value)
         if var is None:
@@ -784,8 +820,8 @@ class S7MonitorApp(App):
         """Toggle a Bit variable with confirmation."""
         if not self._check_write_allowed():
             return
-        table = self.query_one("#var-table", DataTable)
-        if table.row_count == 0:
+        table = self._focused_table()
+        if table is None or table.row_count == 0:
             return
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
         var = self._row_key_to_var.get(row_key.value)

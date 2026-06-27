@@ -4,6 +4,8 @@ import asyncio
 
 import pytest
 
+from textual.widgets import DataTable
+
 from s7pymon.app import HexDumpDisplay, S7MonitorApp, format_hex_dump
 from s7pymon.engine import ReadGroup, WriteMode
 from s7pymon.protocols import DataSource
@@ -160,6 +162,88 @@ class TestHexFlash:
         asyncio.run(run())
 
 
+class TestVarSide:
+    """_var_side classifies variables by source."""
+
+    def test_input_eb(self):
+        var = S7Variable.parse("EB.Byte0")
+        assert S7MonitorApp._var_side(var) == "input"
+
+    def test_input_eip(self):
+        var = S7Variable.parse("EIP.Input.Byte0")
+        assert S7MonitorApp._var_side(var) == "input"
+
+    def test_output_ab(self):
+        var = S7Variable.parse("AB.Byte0")
+        assert S7MonitorApp._var_side(var) == "output"
+
+    def test_output_eip(self):
+        var = S7Variable.parse("EIP.Output.Byte0")
+        assert S7MonitorApp._var_side(var) == "output"
+
+    def test_output_db(self):
+        """DB variables go to output (writable) side."""
+        var = S7Variable.parse("DB1.Byte0")
+        assert S7MonitorApp._var_side(var) == "output"
+
+    def test_output_mb(self):
+        var = S7Variable.parse("MB.Byte0")
+        assert S7MonitorApp._var_side(var) == "output"
+
+
+class TestTwoTableRouting:
+    """Variables are split across input and output tables."""
+
+    @pytest.fixture
+    def app(self):
+        conn = BaseFakeConnection()
+        variables = [
+            S7Variable.parse("EIP.Input.Byte0", label="in0"),
+            S7Variable.parse("EIP.Input.Byte1", label="in1"),
+            S7Variable.parse("EIP.Output.Bit0.0", label="out_bit"),
+            S7Variable.parse("DB1.Byte0", label="db0"),
+        ]
+        groups = [
+            ReadGroup(DataSource.s7_db(1), start=0, size=2),
+        ]
+        return S7MonitorApp(
+            connection=conn,
+            variables=variables,
+            read_groups=groups,
+            poll_interval=3600,
+        )
+
+    def test_input_table_populated(self, app):
+        """Input variables go to var-table-input."""
+        async def run():
+            async with app.run_test() as pilot:
+                table = app.query_one("#var-table-input", DataTable)
+                assert table.row_count == 2
+
+        asyncio.run(run())
+
+    def test_output_table_populated(self, app):
+        """Output variables go to var-table-output."""
+        async def run():
+            async with app.run_test() as pilot:
+                table = app.query_one("#var-table-output", DataTable)
+                assert table.row_count == 2
+
+        asyncio.run(run())
+
+    def test_focused_table(self, app):
+        """_focused_table returns the currently focused table."""
+        async def run():
+            async with app.run_test() as pilot:
+                # Default focus is on var-table-input (first DataTable)
+                output_table = app.query_one("#var-table-output", DataTable)
+                output_table.focus()
+                await pilot.pause()
+                assert app._focused_table() is output_table
+
+        asyncio.run(run())
+
+
 class TestRowKeyLookup:
     """_row_key_to_var dict is populated and used by toggle/edit actions."""
 
@@ -196,7 +280,9 @@ class TestRowKeyLookup:
         """action_toggle_bit finds an S7 Bit variable via _row_key_to_var."""
         async def run():
             async with app.run_test() as pilot:
-                table = app.query_one("#var-table")
+                table = app.query_one("#var-table-output")
+                table.focus()
+                await pilot.pause()
                 table.move_cursor(row=0)
                 await pilot.pause()
                 app.action_toggle_bit()
@@ -209,7 +295,9 @@ class TestRowKeyLookup:
         """action_toggle_bit finds an EIP Bit variable via _row_key_to_var."""
         async def run():
             async with app.run_test() as pilot:
-                table = app.query_one("#var-table")
+                table = app.query_one("#var-table-output")
+                table.focus()
+                await pilot.pause()
                 table.move_cursor(row=2)
                 await pilot.pause()
                 app.action_toggle_bit()
@@ -222,7 +310,9 @@ class TestRowKeyLookup:
         """action_toggle_bit skips non-Bit variables."""
         async def run():
             async with app.run_test() as pilot:
-                table = app.query_one("#var-table")
+                table = app.query_one("#var-table-output")
+                table.focus()
+                await pilot.pause()
                 table.move_cursor(row=1)
                 await pilot.pause()
                 app.action_toggle_bit()
@@ -235,7 +325,9 @@ class TestRowKeyLookup:
         """action_edit_variable finds the variable via _row_key_to_var."""
         async def run():
             async with app.run_test() as pilot:
-                table = app.query_one("#var-table")
+                table = app.query_one("#var-table-output")
+                table.focus()
+                await pilot.pause()
                 table.move_cursor(row=0)
                 await pilot.pause()
                 app.action_edit_variable()
