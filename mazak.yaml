@@ -6,52 +6,145 @@ interval: 0.1               # 100 ms for fast I/O
 output_assembly: 100
 #input_assembly: 100
 input_assembly: 101
-#input_size: 100
+#input_size: 110
 input_size: 110
-#output_size: 100
+#output_size: 110
 output_size: 110
 rpi_ms: 100
+field_vars:
+  EIP.Input:
+    base_register: 18178
+    register_width_bits: 16
+    fields:
+      - 18178:
+          - Bit0.0:DO 000 - heartbeat
+          - Bit0.1:DO 001 - machine_ready
+          - Bit0.2:DO 002 - robot stop request
+          - Bit0.3:DO 003 - panel retracted
+          - Bit0.4:DO 004 - alarm
+          - Bit0.6:DO 006 - power off req ack
+          - Bit1.0:DO 008 - fix1 clamp complete
+          - Bit1.1:DO 009 - fix1 unclamp complete
+          - Bit1.2:DO 010 - fix2 clamp complete
+          - Bit1.3:DO 011 - fix2 unclamp complete
+          - Bit1.4:DO 012 - fix3 clamp complete
+          - Bit1.5:DO 013 - fix3 unclamp complete
+          - Bit1.6:DO 014 - fix4 clamp complete
+          - Bit1.7:DO 015 - fix4 unclamp complete
+      - 18179:
+          - Bit0.0:DO 016 - Seat detect complete 1
+          - Bit0.1:DO 017 - Seat detect complete 2
+          - Bit0.2:DO 018 - WP seat detect alarm 1
+          - Bit0.3:DO 019 - WP seat detect alarm 2
+      - 18184:
+          - Bit0.0:DO 101 - Work number search complete
+          - Bit0.1:DO 102 - Cycle start permission signal
+          - Bit0.2:DO 103 - Machine operating
+          - Bit0.3:DO 104 - Machining complete
+          - Bit0.4:DO 105 - Robot service code 0
+          - Bit0.5:DO 105 - Robot service code 1
+          - Bit0.6:DO 105 - Robot service code 2
+          - Bit0.7:DO 105 - Robot service code 3
+          - Bit1.0:DO 106 - Robot service request
+          - Bit1.1:DO 107 - Front/Side door open finished
+          - Bit1.2:DO 108 - Front/Side door close finished
+          - Bit1.3:DO 109 - Robot access permitted
+          - Bit1.4:DO 110 - Front door open finished
+          - Bit1.5:DO 111 - Front door close finished
+      - 18200:
+          - Chars0.32:DO 100 - Program
+  EIP.Output:
+    base_register: 16386
+    register_width_bits: 16
+    fields:
+      - 16386:
+          - Bit0.0:DI 000 - Heartbeat
+          - Bit0.1:DI 001 - Robot ready
+          - Bit0.2:DI 002 - Machine stop request
+          - Bit0.3:DI 003 - Robot operating
+          - Bit0.4:DI 004 - Robot alarm
+          - Bit0.5:DI 005 - Operator interrupt request
+          - Bit0.6:DI 006 - Auto power off req
+          - Bit1.0:DI 008 - fix1 clamp command
+          - Bit1.1:DI 009 - fix1 unclamp command
+          - Bit1.2:DI 010 - fix2 clamp command
+          - Bit1.3:DI 011 - fix2 unclamp command
+          - Bit1.4:DI 012 - fix3 clamp command
+          - Bit1.5:DI 013 - fix3 unclamp command
+          - Bit1.6:DI 014 - fix4 clamp command
+          - Bit1.7:DI 015 - fix4 unclamp command
+      - 16387:
+          - Bit0.0:DI 016 - WP seat detect request 1
+          - Bit0.1:DI 017 - WP seat detect request 2
+          - Bit0.2:DI 018 - Ignore WP seat detect alarm 1
+          - Bit0.3:DI 019 - Ignore WP seat detect alarm 2
+      - 16392:
+          - Bit0.0:DI 101 - Work number search start
+          - Bit0.1:DI 102 - Cycle start command
+          - Bit0.2:DI 103 - NC reset
+          - Bit0.3:DI 104 - All machining complete
+          - Bit0.5:DI 105 - Robot service finished signal
+          - Bit1.1:DI 107 - Machine side door open command
+          - Bit1.2:DI 108 - Machine side door close command
+          - Bit1.3:DI 109 - Robot clear
+          - Bit1.4:DI 110 - Machine front door open command
+          - Bit1.5:DI 111 - Machine front door close command
+      - 16408:
+          - Chars0.32:DI 100 - Target work number
+
 variables:
-  #- EIP.Input.Byte4:heartbeat
-  - EIP.Input.Bit0.0:heartbeat
-  - EIP.Input.Bit0.1:machine_ready
-  - EIP.Input.Bit0.2:robot stop request
-  - EIP.Input.Bit0.3:panel retracted
-  - EIP.Input.Bit0.4:alarm
-  - EIP.Input.Bit0.6:power off req ack
-  - EIP.Input.Bit1.0:1 clamp complete
-  - EIP.Input.Bit1.1:1 unclamp complete
-  - EIP.Input.Bit1.2:2 clamp complete
-  - EIP.Input.Bit1.3:2 unclamp complete
-  - EIP.Input.Bit1.4:3 clamp complete
-  - EIP.Input.Bit1.5:3 unclamp complete
-  - EIP.Input.Bit1.6:4 clamp complete
-  - EIP.Input.Bit1.7:4 unclamp complete
-  - EIP.Input.Bit2.0:Seat detect complete 1
-  - EIP.Input.Bit2.1:Seat detect complete 2
-  - EIP.Input.Bit2.2:Workpiece seat detect alarm 1
-  - EIP.Input.Bit2.3:Workpiece seat detect alarm 2
-  - EIP.Input.Chars44.32:Program
-  #- EIP.Input.Ascii8:32:Current work number
-  #- EIP.Input.Bit5.1:chuck1unclamped
-  #- EIP.Input.Int8:temperature
-  #- EIP.Input.Int8:temperature2
-  #- EIP.Input.Int8:temperature3
-  #- EIP.Input.Int8:temperature4
-  #- EIP.Input.Int8:temperature5
-  #- EIP.Input.Int8:temperature6
-  #- EIP.Output.DWord8:setpoint1
-  #- EIP.Output.DWord8:setpoint2
-  #- EIP.Output.DWord8:setpoint3
-  #- EIP.Output.DWord8:setpoint4
-  #- EIP.Output.DWord8:setpoint5
-  #- EIP.Output.DWord8:setpoint6
+#  #- EIP.Input.ByteI:heartbeat
+#  - EIP.Input.Word0I0:DO 000 - heartbeat
+#  - EIP.Input.Word0I1:DO 001 - machine_ready
+#  - EIP.Input.Word0I2:DO 002 - robot stop request
+#  - EIP.Input.Word0I3:DO 003 - panel retracted
+#  - EIP.Input.Word0I4:DO 004 - alarm
+#  - EIP.Input.Word0I6:DO 006 - power off req ack
+#  #- EIP.Input.Bit1I0:1 clamp complete
+#  - EIP.Input.Word0I8:DO 008 - fix1 clamp complete
+#  #- EIP.Input.Bit1.1:1 unclamp complete
+#  - EIP.Input.Word0.9:DO 009 - fix1 unclamp complete
+#  #- EIP.Input.Bit1.2:2 clamp complete
+#  - EIP.Input.Word0.a:DO 010 - fix2 clamp complete
+#  #- EIP.Input.Bit1.3:2 unclamp complete
+#  - EIP.Input.Word0.b:DO 011 - fix2 unclamp complete
+#  #- EIP.Input.Bit1.4:3 clamp complete
+#  - EIP.Input.Word0.c:DO 012 - fix3 clamp complete
+#  #- EIP.Input.Bit1.5:3 unclamp complete
+#  - EIP.Input.Word0.d:DO 013 - fix3 unclamp complete
+#  #- EIP.Input.Bit1.6:4 clamp complete
+#  - EIP.Input.Word0.e:DO 014 - fix4 clamp complete
+#  #- EIP.Input.Bit1.7:4 unclamp complete
+#  - EIP.Input.Word0.f:DO 015 - fix4 unclamp complete
+#  #- EIP.Input.Bit2.0:Seat detect complete 1
+#  - EIP.Input.Word2.0:DO 016 - Seat detect complete 1
+#  #- EIP.Input.Bit2.1:Seat detect complete 2
+#  - EIP.Input.Word2.1:DO 017 - Seat detect complete 2
+#  #- EIP.Input.Bit2.2:Workpiece seat detect alarm 1
+#  - EIP.Input.Word2.2:DO 018 - WP seat detect alarm 1
+#  #- EIP.Input.Bit2.3:Workpiece seat detect alarm 2
+#  - EIP.Input.Word2.3:DO 019 - WP seat detect alarm 2
+#  - EIP.Input.Chars44.32:Program
+#  #- EIP.Input.Ascii8:32:Current work number
+#  #- EIP.Input.Bit5.1:chuck1unclamped
+#  #- EIP.Input.Int8:temperature
+#  #- EIP.Input.Int8:temperature2
+#  #- EIP.Input.Int8:temperature3
+#  #- EIP.Input.Int8:temperature4
+#  #- EIP.Input.Int8:temperature5
+#  #- EIP.Input.Int8:temperature6
+#  #- EIP.Output.DWord8:setpoint1
+#  #- EIP.Output.DWord8:setpoint2
+#  #- EIP.Output.DWord8:setpoint3
+#  #- EIP.Output.DWord8:setpoint4
+#  #- EIP.Output.DWord8:setpoint5
+#  #- EIP.Output.DWord8:setpoint6
   - EIP.Output.Bit0.0:heartbeat
 rules:
   # Copy input byte 0 to output byte 0 every cycle
-  EIP.Output.Bit0.0:
-    follow: EIP.Input.Bit0.0
+  #EIP.Output.Bit0.0:
+  #  follow: EIP.Input.Bit0.0
   # Toggle bit 0 of output byte 0 every 2 cycles (heartbeat)
-  #EIP.Output.Bit1.0:
-  #  toggle: 2
+  EIP.Output.Bit0.0:
+    toggle: 5
 
