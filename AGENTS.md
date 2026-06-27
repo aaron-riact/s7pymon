@@ -6,6 +6,7 @@
 - **Pedantic about commit boundaries** — never mix unrelated changes in the same commit. Check `git status`/`git diff` before staging. Only stage intended files.
 - **Both type checkers must pass** (`ty check .` + `pyright .`) before committing, on source + tests.
 - **Plain language** — avoid technobabble, avoid vague adjectives, and colloquial verbs.  Use direct plain concrete language in commit messages.  Only use abstractions when it clarifies.
+- **Smallest working change, then refactor** — Make the smallest change to enable the feature request, add tests and commit it.  Afterward consider the "best" approach, ask the user if necessary and refactor to well structured code
 
 ## Type checking and testing
 
