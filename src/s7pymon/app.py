@@ -14,11 +14,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Union
 
+from rich.segment import Segment
+from rich.style import Style
 from rich.text import Text
 from textual import work
+from textual.strip import Strip
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.geometry import Size
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
@@ -93,7 +97,7 @@ class ConnectionStatus(Static):
 
 
 class HexDumpDisplay(Static):
-    """Live hex dump of read group contents."""
+    """Live hex dump of read group contents using the Line API."""
 
     collapsed: reactive[bool] = reactive(False)
     show_interesting_only: reactive[bool] = reactive(False)
@@ -105,18 +109,17 @@ class HexDumpDisplay(Static):
         self._selected_abs_offsets: dict[str, set[int]] = {}
         self._interesting_abs_offsets: set[int] | None = None
         self._hex_shape: tuple[tuple[str, int], ...] = ()
+        self._lines: list[Strip] = []
+        self._rebuild_lines()
+
+    # -- Public API -----------------------------------------------------------
 
     def set_selected_offsets(self, group_label: str, offsets: set[int]) -> None:
         if self._selected_abs_offsets.get(group_label) == offsets:
             return
         self._selected_abs_offsets[group_label] = offsets
+        self._rebuild_lines()
         self.refresh()
-
-    def watch_collapsed(self, old_val: bool, new_val: bool) -> None:
-        self.refresh(layout=True)
-
-    def watch_show_interesting_only(self, old_val: bool, new_val: bool) -> None:
-        self.refresh(layout=True)
 
     def set_data(
         self,
@@ -130,18 +133,74 @@ class HexDumpDisplay(Static):
         shape = tuple((label, len(d)) for label, d, _ in group_data)
         needs_layout = shape != self._hex_shape
         self._hex_shape = shape
+        self._rebuild_lines()
         self.refresh(layout=needs_layout)
+
+    def clear_flash(self) -> None:
+        """Clear flash highlighting."""
+        if not self._changed_abs_offsets:
+            return
+        self._changed_abs_offsets = set()
+        self._rebuild_lines()
+        self.refresh()
+
+    # -- Reactives ------------------------------------------------------------
+
+    def watch_collapsed(self, old_val: bool, new_val: bool) -> None:
+        if not new_val:
+            self._rebuild_lines()
+        self.refresh(layout=True)
+
+    def watch_show_interesting_only(self, old_val: bool, new_val: bool) -> None:
+        self._rebuild_lines()
+        self.refresh(layout=True)
+
+    # -- Line API sizing ------------------------------------------------------
+
+    def get_content_height(self, container: Size, viewport: Size, width: int) -> int:
+        if self.collapsed:
+            return 1
+        return max(1, len(self._lines))
+
+    # -- Line API rendering ---------------------------------------------------
+
+    def render_line(self, y: int) -> Strip:
+        if self.collapsed:
+            return Strip([Segment("  ▸ hex dump (press h to expand)", Style.parse("dim cyan"))]) if y == 0 else Strip([])
+        if y < len(self._lines):
+            return self._lines[y]
+        return Strip([])
+
+    # -- Fallback for tests ---------------------------------------------------
 
     def render(self) -> Text:
         if self.collapsed:
             return Text("  ▸ hex dump (press h to expand)", style="dim cyan")
-
         if not self._group_data:
             return Text("  No data yet")
-
         result = Text()
+        for i, strip in enumerate(self._lines):
+            if i > 0:
+                result.append("\n")
+            for seg in strip._segments:
+                result.append(seg.text, seg.style or "")
+        return result
+
+    # -- Line cache -----------------------------------------------------------
+
+    def _rebuild_lines(self) -> None:
+        if self.collapsed:
+            self._lines = []
+            return
+
+        if not self._group_data:
+            self._lines = [Strip([Segment("  No data yet")])]
+            return
+
+        lines: list[Strip] = []
         interesting_abs = self._interesting_abs_offsets
-        for gidx, (label, data, start) in enumerate(self._group_data):
+
+        for label, data, start in self._group_data:
             group_selected = self._selected_abs_offsets.get(label, set())
             changed = self._changed_abs_offsets
             group_rendered = False
@@ -155,53 +214,60 @@ class HexDumpDisplay(Static):
                         continue
 
                 if not group_rendered:
-                    if result:
-                        result.append("\n")
                     sep = f"  ─── {label} "
-                    result.append(sep, style="bold cyan")
-                    result.append("─" * max(0, 62 - len(sep) + 2), style="dim cyan")
-                    result.append("\n")
+                    padding = "─" * max(0, 62 - len(sep) + 2)
+                    lines.append(Strip([
+                        Segment(sep, Style.parse("bold cyan")),
+                        Segment(padding, Style.parse("dim cyan")),
+                    ]))
                     group_rendered = True
 
-                result.append(f"  {abs_line:04X} │ ", style="dim cyan")
+                segs: list[Segment] = []
+                segs.append(Segment(f"  {abs_line:04X} │ ", Style.parse("dim cyan")))
 
                 for j, b in enumerate(chunk):
                     byte_abs = start + i + j
                     pair = f"{b:02X}"
                     interesting = interesting_abs is None or byte_abs in interesting_abs
+
                     if byte_abs in group_selected and byte_abs in changed:
-                        result.append(Text(pair, style="bold reverse #FF8800"))
+                        style = Style.parse("bold reverse #FF8800")
                     elif byte_abs in group_selected:
-                        result.append(Text(pair, style="bold reverse"))
+                        style = Style.parse("bold reverse")
                     elif byte_abs in changed:
-                        result.append(Text(pair, style="bold #FF8800"))
+                        style = Style.parse("bold #FF8800")
                     elif not interesting:
-                        result.append(Text(pair, style="dim"))
+                        style = Style.parse("dim")
                     else:
-                        result.append(pair)
+                        style = Style()
+
+                    segs.append(Segment(pair, style))
+
                     if j == 7 and len(chunk) > 8:
-                        result.append("  ")
+                        segs.append(Segment("  "))
                     elif j < len(chunk) - 1:
-                        result.append(" ")
+                        segs.append(Segment(" "))
 
                 remaining = 16 - len(chunk)
                 if remaining > 0:
                     hex_width = len(chunk) * 3 - 1
                     if len(chunk) > 8:
                         hex_width += 1
-                    padding = 48 - hex_width
-                    result.append(" " * padding)
+                    pad = 48 - hex_width
+                    if pad > 0:
+                        segs.append(Segment(" " * pad))
 
-                result.append(" │ ", style="dim cyan")
+                segs.append(Segment(" │ ", Style.parse("dim cyan")))
                 for b in chunk:
-                    result.append(chr(b) if 32 <= b < 127 else "·")
+                    segs.append(Segment(chr(b) if 32 <= b < 127 else "·"))
+                segs.append(Segment(" │"))
 
-                result.append("\n")
+                lines.append(Strip(segs))
 
-        if not result:
-            return Text("  No interesting data in this range", style="dim italic")
+        if not lines:
+            lines.append(Strip([Segment("  No interesting data in this range", Style.parse("dim italic"))]))
 
-        return result
+        self._lines = lines
 
 class EditVariableScreen(ModalScreen[str | None]):
     """Modal dialog for editing a variable value."""
@@ -730,8 +796,7 @@ class S7MonitorApp(App):
         if all_changed_abs or not hd._group_data:
             hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
         elif hd._changed_abs_offsets:
-            hd._changed_abs_offsets = set()
-            hd.refresh(layout=False)
+            hd.clear_flash()
 
         # Update connection status
         conn_status = self.query_one("#conn-status", ConnectionStatus)
