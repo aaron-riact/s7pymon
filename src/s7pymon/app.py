@@ -634,6 +634,11 @@ class S7MonitorApp(App):
                 else:
                     changed_offsets[group.key] = set()
 
+            # Store data before call_from_thread so the next worker always
+            # sees the latest data regardless of main-thread scheduling.
+            for group_key, (data, _) in results.items():
+                self._previous_hex_data[group_key] = bytearray(data)
+
             self.call_from_thread(self._on_data_received, results, changed_offsets)
 
             if self._rules_engine is not None:
@@ -686,10 +691,6 @@ class S7MonitorApp(App):
         """Process received data from all groups on the main thread."""
         self._current_data = results
         self._poll_count += 1
-
-        # Persist data for next poll's diff
-        for group_key, (data, _) in results.items():
-            self._previous_hex_data[group_key] = bytearray(data)
 
         # Build hex dump — use pre-computed changed offsets, no byte loop
         hex_groups: list[tuple[str, bytearray, int]] = []
