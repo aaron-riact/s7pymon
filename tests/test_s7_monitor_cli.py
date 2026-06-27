@@ -15,12 +15,14 @@ from s7pymon.variable import S7Area, DataType, S7Variable
 class TestParseVariableArg:
     def test_simple_spec(self):
         v = parse_variable_arg("DB210.Byte0")
+        assert isinstance(v, S7Variable)
         assert v.db == 210
         assert v.type == DataType.BYTE
         assert v.label is None
 
     def test_spec_with_label(self):
         v = parse_variable_arg("DB210.Byte0:heartbeat")
+        assert isinstance(v, S7Variable)
         assert v.db == 210
         assert v.type == DataType.BYTE
         assert v.label == "heartbeat"
@@ -39,6 +41,7 @@ class TestParseVariableArg:
 
     def test_area_spec(self):
         v = parse_variable_arg("EB.Byte0:input0")
+        assert isinstance(v, S7Variable)
         assert v.area == S7Area.EB
         assert v.label == "input0"
 
