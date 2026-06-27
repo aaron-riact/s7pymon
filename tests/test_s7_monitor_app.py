@@ -65,6 +65,52 @@ class TestFormatHexDump:
         assert "00 00" in lines[1]
 
 
+class TestHexCollapse:
+    """HexDumpDisplay collapsible toggle."""
+
+    @pytest.fixture
+    def app(self):
+        conn = BaseFakeConnection()
+        variables = [S7Variable.parse("DB1.Byte0", label="b0")]
+        groups = [ReadGroup(DataSource.s7_db(1), start=0, size=2)]
+        return S7MonitorApp(connection=conn, variables=variables, read_groups=groups, poll_interval=3600)
+
+    def test_starts_expanded(self, app):
+        """Hex dump starts expanded (not collapsed)."""
+        async def run():
+            async with app.run_test() as pilot:
+                hex_dump = app.query_one("#hex-dump")
+                assert not hex_dump.collapsed
+
+        asyncio.run(run())
+
+    def test_h_toggles_collapse(self, app):
+        """Pressing h toggles hex dump collapse."""
+        async def run():
+            async with app.run_test() as pilot:
+                hex_dump = app.query_one("#hex-dump")
+                assert not hex_dump.collapsed
+                await pilot.press("h")
+                await pilot.pause()
+                assert hex_dump.collapsed
+                await pilot.press("h")
+                await pilot.pause()
+                assert not hex_dump.collapsed
+
+        asyncio.run(run())
+
+    def test_collapsed_render_shows_hint(self, app):
+        """Collapsed hex dump shows collapse hint text."""
+        async def run():
+            async with app.run_test() as pilot:
+                hex_dump = app.query_one("#hex-dump")
+                hex_dump.collapsed = True
+                rendered = hex_dump.render()
+                assert "press h" in rendered.plain.lower()
+
+        asyncio.run(run())
+
+
 class TestRowKeyLookup:
     """_row_key_to_var dict is populated and used by toggle/edit actions."""
 

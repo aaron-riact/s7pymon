@@ -96,11 +96,14 @@ class HexDumpDisplay(Static):
 
     hex_content: reactive[str] = reactive("  No data yet")
     db_label: reactive[str] = reactive("DB???")
+    collapsed: reactive[bool] = reactive(False)
 
     def watch_hex_content(self, old_val: str, new_val: str) -> None:
         self.refresh(layout=True)
 
     def render(self) -> Text:
+        if self.collapsed:
+            return Text("  ▸ hex dump (press h to expand)", style="dim cyan")
         title = Text(f"  ─── {self.db_label} ", style="bold cyan")
         title.append("─" * max(0, 62 - len(self.db_label) - 6), style="dim cyan")
         return Text.assemble(title, "\n", Text(self.hex_content, style=""), "\n")
@@ -331,6 +334,7 @@ class S7MonitorApp(App):
         Binding("p", "toggle_pause", "Pause"),
         Binding("c", "reconnect", "Reconnect"),
         Binding("w", "cycle_write_mode", "Write Mode"),
+        Binding("h", "toggle_hex", "Hex Dump"),
     ]
 
     paused: reactive[bool] = reactive(False)
@@ -855,6 +859,16 @@ class S7MonitorApp(App):
             log.write("[yellow]Polling paused[/yellow]")
         else:
             log.write("[green]Polling resumed[/green]")
+
+    def action_toggle_hex(self) -> None:
+        """Toggle hex dump collapse."""
+        hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
+        hex_dump.collapsed = not hex_dump.collapsed
+        log = self.query_one("#log-panel", RichLog)
+        if hex_dump.collapsed:
+            log.write("[dim]Hex dump collapsed[/dim]")
+        else:
+            log.write("[dim]Hex dump expanded[/dim]")
 
     def action_reconnect(self) -> None:
         """Reconnect to the PLC."""
