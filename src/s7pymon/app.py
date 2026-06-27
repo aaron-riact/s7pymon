@@ -463,8 +463,7 @@ class S7MonitorApp(App):
         self._row_keys: dict[int, str] = {}
         self._row_key_to_var: dict = {}
         self._previous_hex_data: dict[str, bytearray] = {}
-        self._flash_active: dict[str, float] = {}  # spec → expiry (monotonic)
-        self._hex_flash_expiry: float = 0.0
+        self._flash_active: set[str] = set()
         self._tables: dict[str, DataTable] = {}
         self._hex_dump: HexDumpDisplay | None = None
 
@@ -710,15 +709,12 @@ class S7MonitorApp(App):
 
         hd = self._hex_dump
         assert hd is not None
-        # Persist flash for 300ms wall-clock so it survives no-change polls.
+        # Skip hex dump refresh when nothing changed and no stale flash
         if all_changed_abs or not hd._group_data:
             hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
-            if all_changed_abs:
-                self._hex_flash_expiry = time.monotonic() + 0.3
         elif hd._changed_abs_offsets:
-            if time.monotonic() > self._hex_flash_expiry:
-                hd._changed_abs_offsets = set()
-                hd.refresh(layout=False)
+            hd._changed_abs_offsets = set()
+            hd.refresh(layout=False)
 
         # Update connection status
         conn_status = self.query_one("#conn-status", ConnectionStatus)
@@ -788,19 +784,15 @@ class S7MonitorApp(App):
                 if prev is None:
                     cell_updates.append((table, row_key, self.COL_VALUE, formatted))
                     cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active.pop(var.spec, None)
+                    self._flash_active.discard(var.spec)
                 elif changed:
                     cell_updates.append((table, row_key, self.COL_VALUE, Text(formatted, style="bold yellow")))
                     cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    self._flash_active[var.spec] = time.monotonic() + 0.3
+                    self._flash_active.add(var.spec)
                 elif var.spec in self._flash_active:
-                    if time.monotonic() > self._flash_active[var.spec]:
-                        del self._flash_active[var.spec]
-                        cell_updates.append((table, row_key, self.COL_VALUE, formatted))
-                        cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
-                    else:
-                        cell_updates.append((table, row_key, self.COL_VALUE, Text(formatted, style="bold yellow")))
-                        cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
+                    cell_updates.append((table, row_key, self.COL_VALUE, formatted))
+                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
+                    self._flash_active.discard(var.spec)
 
             except Exception as e:
                 row_key = self._row_keys.get(id(var))
