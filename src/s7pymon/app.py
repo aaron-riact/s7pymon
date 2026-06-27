@@ -260,7 +260,6 @@ class HexDumpDisplay(Static):
                 segs.append(Segment(" │ ", Style.parse("dim cyan")))
                 for b in chunk:
                     segs.append(Segment(chr(b) if 32 <= b < 127 else "·"))
-                segs.append(Segment(" │"))
 
                 lines.append(Strip(segs))
 
