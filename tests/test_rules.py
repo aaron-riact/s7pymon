@@ -90,7 +90,7 @@ class TestRulesEngine:
         ])
         conn = FakeConnection()
         engine.apply(conn, {"EIP.Input.Int2": "1000"})
-        assert conn.writes == [("EIP.Output", 0, bytearray(b"\x03\xE8"))]
+        assert conn.writes == [("EIP.Output", 0, bytearray(b"\xE8\x03"))]
 
     def test_follow_bit_to_bit(self):
         engine = RulesEngine([

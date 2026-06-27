@@ -56,6 +56,11 @@ _AREA_DESCRIPTIONS: dict[S7Area, str] = {
 }
 
 
+class ByteOrder(Enum):
+    BIG = "big"
+    LITTLE = "little"
+
+
 class DataType(Enum):
     BYTE = "Byte"
     INT = "Int"
@@ -99,6 +104,12 @@ _TYPE_FORMATS: dict[DataType, str] = {
 }
 
 
+def _struct_format(data_type: DataType, byte_order: ByteOrder) -> str:
+    fmt = _TYPE_FORMATS[data_type]
+    prefix = ">" if byte_order == ByteOrder.BIG else "<"
+    return prefix + fmt[1:]
+
+
 S7Type = DataType
 "Deprecated alias — use DataType."
 
@@ -125,7 +136,12 @@ _EIP_VAR_PATTERN = re.compile(
 # ---------------------------------------------------------------- shared helpers
 
 
-def _decode_value(data: bytes | bytearray, data_type: DataType, extra: int | None) -> Union[int, float, bool, str]:
+def _decode_value(
+    data: bytes | bytearray,
+    data_type: DataType,
+    extra: int | None,
+    byte_order: ByteOrder = ByteOrder.BIG,
+) -> Union[int, float, bool, str]:
     if len(data) < data_type.byte_size and data_type not in (DataType.STRING, DataType.BIT, DataType.CHARS):
         raise ValueError(f"Need {data_type.byte_size} bytes to decode, got {len(data)}")
     raw = data if data_type in (DataType.STRING, DataType.CHARS) else data[:data_type.byte_size]
@@ -144,17 +160,18 @@ def _decode_value(data: bytes | bytearray, data_type: DataType, extra: int | Non
         return raw.rstrip(b"\x00").decode("ascii", errors="replace")
 
     if data_type in (DataType.WORD, DataType.DWORD) and extra is not None:
-        fmt = data_type.struct_format
-        assert fmt is not None
-        register = struct.unpack(fmt, raw)[0]
+        register = struct.unpack(_struct_format(data_type, byte_order), raw)[0]
         return bool(register & (1 << extra))
 
-    fmt = data_type.struct_format
-    assert fmt is not None
-    return struct.unpack(fmt, raw)[0]
+    return struct.unpack(_struct_format(data_type, byte_order), raw)[0]
 
 
-def _encode_value(data_type: DataType, extra: int | None, value: Union[int, float, bool, str]) -> bytearray:
+def _encode_value(
+    data_type: DataType,
+    extra: int | None,
+    value: Union[int, float, bool, str],
+    byte_order: ByteOrder = ByteOrder.BIG,
+) -> bytearray:
     if data_type == DataType.BIT:
         raise ValueError("Cannot encode full byte for Bit type; use encode_bit() instead")
 
@@ -179,10 +196,8 @@ def _encode_value(data_type: DataType, extra: int | None, value: Union[int, floa
         buf[:len(encoded)] = encoded
         return buf
 
-    fmt = data_type.struct_format
-    assert fmt is not None
     coerced = float(value) if data_type == DataType.REAL else int(value)
-    return bytearray(struct.pack(fmt, coerced))
+    return bytearray(struct.pack(_struct_format(data_type, byte_order), coerced))
 
 
 def _encode_bit_value(extra: int, current_byte: int, value: bool) -> bytearray:
@@ -270,6 +285,7 @@ class Variable(ABC):
     offset: int
     extra: int | None = None  # bit number for Bit, max length for String/Chars, hex bit for Word/DWord
     label: str | None = None  # optional human-readable name
+    byte_order: ByteOrder = ByteOrder.BIG
 
     @property
     @abstractmethod
@@ -302,17 +318,25 @@ class Variable(ABC):
         return self.byte_size
 
     @staticmethod
-    def parse(spec: str, label: str | None = None) -> Variable:
-        """Parse a spec string of any supported protocol into a variable."""
+    def parse(
+        spec: str,
+        label: str | None = None,
+        byte_order: ByteOrder | None = None,
+    ) -> Variable:
+        """Parse a spec string of any supported protocol into a variable.
+
+        ``byte_order`` overrides the protocol's default (S7 big-endian, EIP
+        little-endian).
+        """
         m = _EIP_VAR_PATTERN.match(spec)
         if m:
-            return _parse_eip(m, label)
+            return _parse_eip(m, label, byte_order)
         m = _DB_VAR_PATTERN.match(spec)
         if m:
-            return _parse_s7(m, label, area=S7Area.DB, db=int(m.group(1)))
+            return _parse_s7(m, label, byte_order, area=S7Area.DB, db=int(m.group(1)))
         m = _AREA_VAR_PATTERN.match(spec)
         if m:
-            return _parse_s7(m, label, area=_AREAS[m.group(1).lower()], db=0)
+            return _parse_s7(m, label, byte_order, area=_AREAS[m.group(1).lower()], db=0)
         raise ValueError(
             f"Invalid variable spec: {spec!r}. "
             f"Expected format: DB<num>.<Type><offset>[.<extra>] "
@@ -324,10 +348,10 @@ class Variable(ABC):
     def decode(self, data: bytes | bytearray) -> Union[int, float, bool, str]:
         if len(data) < self.byte_size:
             raise ValueError(f"Need {self.byte_size} bytes to decode {self.spec}, got {len(data)}")
-        return _decode_value(data, self.type, self.extra)
+        return _decode_value(data, self.type, self.extra, self.byte_order)
 
     def encode(self, value: Union[int, float, bool, str]) -> bytearray:
-        return _encode_value(self.type, self.extra, value)
+        return _encode_value(self.type, self.extra, value, self.byte_order)
 
     def encode_bit(self, current_byte: int, value: bool) -> bytearray:
         assert self.type == DataType.BIT and self.extra is not None
@@ -378,6 +402,7 @@ class EIPVariable(Variable):
     """A variable in an EtherNet/IP assembly."""
 
     assembly: str  # "Input", "Output", "Config", or numeric
+    byte_order: ByteOrder = ByteOrder.LITTLE
 
     @property
     def spec(self) -> str:
@@ -394,16 +419,28 @@ class EIPVariable(Variable):
 _AREAS: dict[str, S7Area] = {str(a.value).lower(): a for a in S7Area}
 
 
-def _parse_s7(m: re.Match, label: str | None, *, area: S7Area, db: int) -> S7Variable:
+def _parse_s7(
+    m: re.Match,
+    label: str | None,
+    byte_order: ByteOrder | None,
+    *,
+    area: S7Area,
+    db: int,
+) -> S7Variable:
     """Build an S7Variable from a match against _DB_VAR_PATTERN or _AREA_VAR_PATTERN."""
     data_type = _parse_type_name(m.group(2))
     offset = int(m.group(3))
     extra = _parse_extra(m.group(4), data_type)
     _validate_type(extra, data_type, m.group(0))
-    return S7Variable(db=db, type=data_type, offset=offset, extra=extra, label=label, area=area)
+    bo = byte_order if byte_order is not None else ByteOrder.BIG
+    return S7Variable(db=db, type=data_type, offset=offset, extra=extra, label=label, area=area, byte_order=bo)
 
 
-def _parse_eip(m: re.Match, label: str | None = None) -> EIPVariable:
+def _parse_eip(
+    m: re.Match,
+    label: str | None = None,
+    byte_order: ByteOrder | None = None,
+) -> EIPVariable:
     """Build an EIPVariable from a regex match against _EIP_VAR_PATTERN."""
     assembly = m.group(1)
     type_name = m.group(2)
@@ -413,7 +450,8 @@ def _parse_eip(m: re.Match, label: str | None = None) -> EIPVariable:
     extra = _parse_extra(extra_str, data_type)
     spec = m.group(0)
     _validate_type(extra, data_type, spec)
-    return EIPVariable(assembly=assembly, type=data_type, offset=offset, extra=extra, label=label)
+    bo = byte_order if byte_order is not None else ByteOrder.LITTLE
+    return EIPVariable(assembly=assembly, type=data_type, offset=offset, extra=extra, label=label, byte_order=bo)
 
 
 def compute_read_range(variables: Sequence[Variable]) -> tuple[int, int]:

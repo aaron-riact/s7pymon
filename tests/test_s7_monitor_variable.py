@@ -425,8 +425,8 @@ class TestEIPVariableParsing:
 
     def test_eip_decode_encode_int(self):
         v = S7Variable.parse("EIP.Input.Int4")
-        assert v.decode(b"\x00\x2A") == 42
-        assert v.encode(42) == bytearray(b"\x00\x2A")
+        assert v.decode(b"\x2A\x00") == 42
+        assert v.encode(42) == bytearray(b"\x2A\x00")
 
     def test_eip_bit_read_modify_write(self):
         v = S7Variable.parse("EIP.Input.Bit0.3")
@@ -528,16 +528,16 @@ class TestEIPVariableParsing:
     def test_eip_word_bit_decode_set(self):
         v = S7Variable.parse("EIP.Input.Word0.f")
         assert v.decode(b"\xFF\xFF") is True
-        assert v.decode(b"\x80\x00") is True  # bit 15 set
+        assert v.decode(b"\x00\x80") is True  # bit 15 set (LE: mask=0x8000)
 
     def test_eip_word_bit_decode_clear(self):
         v = S7Variable.parse("EIP.Input.Word0.f")
         assert v.decode(b"\x00\x00") is False
-        assert v.decode(b"\x7F\xFF") is False  # bit 15 clear
+        assert v.decode(b"\xFF\x7F") is False  # bit 15 clear (LE: mask=0x7FFF)
 
     def test_eip_dword_bit_decode(self):
         v = S7Variable.parse("EIP.Input.DWord0.1f")
-        assert v.decode(b"\x80\x00\x00\x00") is True   # bit 31 set
+        assert v.decode(b"\x00\x00\x00\x80") is True   # bit 31 set (LE: mask=0x80000000)
         assert v.decode(b"\x00\x00\x00\x00") is False   # all clear
 
     def test_eip_word_bit_out_of_range_raises(self):
