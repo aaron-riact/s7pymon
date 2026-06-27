@@ -100,6 +100,11 @@ class HexDumpDisplay(Static):
         super().__init__(**kwargs)
         self._group_data: list[tuple[str, bytearray, int]] = []
         self._changed_abs_offsets: set[int] = set()
+        self._selected_abs_offsets: dict[str, set[int]] = {}
+
+    def set_selected_offsets(self, group_label: str, offsets: set[int]) -> None:
+        self._selected_abs_offsets[group_label] = offsets
+        self.refresh()
 
     def watch_collapsed(self, old_val: bool, new_val: bool) -> None:
         self.refresh(layout=True)
@@ -138,7 +143,10 @@ class HexDumpDisplay(Static):
                 for j, b in enumerate(chunk):
                     byte_abs = start + i + j
                     pair = f"{b:02X}"
-                    if byte_abs in self._changed_abs_offsets:
+                    group_selected = self._selected_abs_offsets.get(label, set())
+                    if byte_abs in group_selected:
+                        result.append(Text(pair, style="bold reverse"))
+                    elif byte_abs in self._changed_abs_offsets:
                         result.append(Text(pair, style="bold #FF8800"))
                     else:
                         result.append(pair)
@@ -707,6 +715,18 @@ class S7MonitorApp(App):
         # Update connection status poll count
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.poll_count = self._poll_count
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        var = self._row_key_to_var.get(event.row_key.value)
+        if var is None:
+            return
+        group_key = self._group_key_for_var(var)
+        data_info = self._current_data.get(group_key)
+        if data_info is None:
+            return
+        hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
+        offsets = set(range(var.offset, var.offset + var.byte_size))
+        hex_dump.set_selected_offsets(group_key, offsets)
 
     def _update_connection_state(self) -> None:
         conn_status = self.query_one("#conn-status", ConnectionStatus)

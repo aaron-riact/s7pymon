@@ -113,6 +113,61 @@ class TestHexCollapse:
         asyncio.run(run())
 
 
+class TestHexSelection:
+    """HexDumpDisplay highlights selected variable's byte range."""
+
+    @pytest.fixture
+    def app(self):
+        conn = BaseFakeConnection()
+        variables = [
+            S7Variable.parse("DB1.Byte0", label="b0"),
+            S7Variable.parse("DB1.Byte2", label="b2"),
+        ]
+        groups = [ReadGroup(DataSource.s7_db(1), start=0, size=4)]
+        return S7MonitorApp(
+            connection=conn,
+            variables=variables,
+            read_groups=groups,
+            poll_interval=3600,
+            write_mode=WriteMode.ALLOWED,
+        )
+
+    def test_set_selected_offsets(self):
+        """set_selected_offsets stores offsets per group."""
+        hd = HexDumpDisplay()
+        hd.set_selected_offsets("DB1", {1, 2, 3})
+        assert hd._selected_abs_offsets == {"DB1": {1, 2, 3}}
+
+    def test_selected_bytes_in_render(self):
+        """Selected bytes appear in rendered output."""
+        hd = HexDumpDisplay()
+        data = bytearray([0x41, 0x42, 0x43, 0x44])
+        hd.set_selected_offsets("DB1", {2, 3})
+        hd.set_data([("DB1", data, 0)])
+        rendered = hd.render()
+        assert "43 44" in rendered.plain
+
+    def test_row_highlight_sets_offsets(self, app):
+        """on_data_table_row_highlighted computes byte range and sets it."""
+        async def run():
+            async with app.run_test() as pilot:
+                hex_dump = app.query_one("#hex-dump", HexDumpDisplay)
+                table = app.query_one("#var-table-output")
+                table.focus()
+                await pilot.pause()
+                # row 0 = DB1.Byte0 (offset 0, byte_size=1) — only sets when data exists
+                app._current_data = {"DB1": (bytearray([0xAA, 0xBB, 0xCC, 0xDD]), 0)}
+                row_key = app._row_keys.get(id(app._variables[0]))
+                # Simulate row highlight
+                from textual.widgets._data_table import RowKey
+                app.on_data_table_row_highlighted(
+                    DataTable.RowHighlighted(table, cursor_row=0, row_key=RowKey(row_key))
+                )
+                assert hex_dump._selected_abs_offsets == {"DB1": {0}}  # Byte0, 1 byte
+
+        asyncio.run(run())
+
+
 class TestHexFlash:
     """HexDumpDisplay byte-level flash on change."""
 
