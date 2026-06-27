@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from s7pymon.app import S7MonitorApp, format_hex_dump
+from s7pymon.app import HexDumpDisplay, S7MonitorApp, format_hex_dump
 from s7pymon.engine import ReadGroup, WriteMode
 from s7pymon.protocols import DataSource
 from s7pymon.variable import S7Area, DataType, S7Variable
@@ -107,6 +107,55 @@ class TestHexCollapse:
                 hex_dump.collapsed = True
                 rendered = hex_dump.render()
                 assert "press h" in rendered.plain.lower()
+
+        asyncio.run(run())
+
+
+class TestHexFlash:
+    """HexDumpDisplay byte-level flash on change."""
+
+    def test_set_data_empty(self):
+        """set_data with no groups renders 'No data yet'."""
+        hd = HexDumpDisplay()
+        hd.set_data([])
+        rendered = hd.render()
+        assert "No data yet" in rendered.plain
+
+    def test_set_data_basic(self):
+        """set_data with one group renders hex content."""
+        hd = HexDumpDisplay()
+        data = bytearray([0x41, 0x42, 0x43])
+        hd.set_data([("DB1", data, 0)])
+        rendered = hd.render()
+        assert "41 42 43" in rendered.plain
+
+    def test_changed_bytes_highlighted(self):
+        """Changed bytes have _changed_abs_offsets and render shows the byte."""
+        hd = HexDumpDisplay()
+        data = bytearray([0x41, 0x42, 0x43])
+        hd.set_data([("DB1", data, 0)], changed_abs_offsets={1})
+        assert 1 in hd._changed_abs_offsets
+        assert 0 not in hd._changed_abs_offsets
+        rendered = hd.render()
+        assert "42" in rendered.plain  # changed byte value shown
+
+    def test_flash_detected_in_on_data_received(self):
+        """_on_data_received detects changed bytes across poll cycles."""
+        grp = ReadGroup(DataSource.s7_db(1), start=0, size=4)
+        variables = [S7Variable.parse("DB1.Byte0", label="b0")]
+        app = S7MonitorApp(connection=BaseFakeConnection(), variables=variables, read_groups=[grp], poll_interval=3600)
+
+        async def run():
+            async with app.run_test() as pilot:
+                hex_dump = app.query_one("#hex-dump", HexDumpDisplay)
+                # First poll — no previous data, so no flash
+                app._on_data_received({"DB1": (bytearray([0xAA, 0xBB, 0xCC, 0xDD]), 0)})
+                assert len(hex_dump._changed_abs_offsets) == 0
+                # Second poll — byte 1 changed (0xBB → 0xEE)
+                app._on_data_received({"DB1": (bytearray([0xAA, 0xEE, 0xCC, 0xDD]), 0)})
+                assert 1 in hex_dump._changed_abs_offsets
+                assert 0 not in hex_dump._changed_abs_offsets
+                assert 2 not in hex_dump._changed_abs_offsets
 
         asyncio.run(run())
 

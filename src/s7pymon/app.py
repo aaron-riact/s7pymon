@@ -92,21 +92,77 @@ class ConnectionStatus(Static):
 
 
 class HexDumpDisplay(Static):
-    """Live hex dump of the DB contents."""
+    """Live hex dump of read group contents."""
 
-    hex_content: reactive[str] = reactive("  No data yet")
-    db_label: reactive[str] = reactive("DB???")
     collapsed: reactive[bool] = reactive(False)
 
-    def watch_hex_content(self, old_val: str, new_val: str) -> None:
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._group_data: list[tuple[str, bytearray, int]] = []
+        self._changed_abs_offsets: set[int] = set()
+
+    def watch_collapsed(self, old_val: bool, new_val: bool) -> None:
+        self.refresh(layout=True)
+
+    def set_data(
+        self,
+        group_data: list[tuple[str, bytearray, int]],
+        changed_abs_offsets: set[int] | None = None,
+    ) -> None:
+        self._group_data = group_data
+        self._changed_abs_offsets = changed_abs_offsets or set()
         self.refresh(layout=True)
 
     def render(self) -> Text:
         if self.collapsed:
             return Text("  ▸ hex dump (press h to expand)", style="dim cyan")
-        title = Text(f"  ─── {self.db_label} ", style="bold cyan")
-        title.append("─" * max(0, 62 - len(self.db_label) - 6), style="dim cyan")
-        return Text.assemble(title, "\n", Text(self.hex_content, style=""), "\n")
+
+        if not self._group_data:
+            return Text("  No data yet")
+
+        result = Text()
+        for gidx, (label, data, start) in enumerate(self._group_data):
+            if gidx > 0:
+                result.append("\n")
+
+            sep = f"  ─── {label} "
+            result.append(sep, style="bold cyan")
+            result.append("─" * max(0, 62 - len(sep) + 2), style="dim cyan")
+            result.append("\n")
+
+            for i in range(0, len(data), 16):
+                chunk = data[i : i + 16]
+                abs_line = start + i
+                result.append(f"  {abs_line:04X} │ ", style="dim cyan")
+
+                for j, b in enumerate(chunk):
+                    byte_abs = start + i + j
+                    pair = f"{b:02X}"
+                    if byte_abs in self._changed_abs_offsets:
+                        result.append(Text(pair, style="bold #FF8800"))
+                    else:
+                        result.append(pair)
+                    if j == 7 and len(chunk) > 8:
+                        result.append("  ")
+                    elif j < len(chunk) - 1:
+                        result.append(" ")
+
+                remaining = 16 - len(chunk)
+                if remaining > 0:
+                    hex_width = len(chunk) * 3 - 1
+                    if len(chunk) > 8:
+                        hex_width += 1
+                    padding = 48 - hex_width
+                    result.append(" " * padding)
+
+                result.append(" │ ", style="dim cyan")
+                for b in chunk:
+                    result.append(chr(b) if 32 <= b < 127 else "·")
+
+                if gidx < len(self._group_data) - 1 or i + 16 < len(data):
+                    result.append("\n")
+
+        return result
 
 
 class EditVariableScreen(ModalScreen[str | None]):
@@ -314,6 +370,9 @@ class S7MonitorApp(App):
         max-height: 24;
         margin: 0 0 1 0;
     }
+    HexDumpDisplay.expanded {
+        max-height: 36;
+    }
     #var-table {
         height: 1fr;
         min-height: 5;
@@ -369,6 +428,7 @@ class S7MonitorApp(App):
         self._poll_timer = None
         self._row_keys: dict[int, str] = {}
         self._row_key_to_var: dict = {}
+        self._previous_hex_data: dict[str, bytearray] = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -418,10 +478,6 @@ class S7MonitorApp(App):
         conn_status.config_text = self._connection.config.display
         conn_status.state = self._connection.state
         conn_status.write_mode = self.write_mode
-
-        hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
-        group_labels = ", ".join(g.label for g in self._read_groups)
-        hex_dump.db_label = group_labels
 
         log = self.query_one("#log-panel", RichLog)
         log.write("[bold]S7 Monitor[/bold] ready. Connecting…")
@@ -550,15 +606,22 @@ class S7MonitorApp(App):
         self._current_data = results
         self._poll_count += 1
 
-        # Build combined hex dump
+        # Build hex dump with byte-level flash detection
         hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
-        hex_parts = []
+        hex_groups: list[tuple[str, bytearray, int]] = []
+        changed_abs_offsets: set[int] = set()
         for group in self._read_groups:
             if group.key in results:
                 data, start = results[group.key]
-                hex_parts.append(f"  ─── {group.label} ───")
-                hex_parts.append(format_hex_dump(data, start))
-        hex_dump.hex_content = "\n".join(hex_parts) if hex_parts else "  No data yet"
+                prev_data = self._previous_hex_data.get(group.key)
+                if prev_data is not None:
+                    min_len = min(len(prev_data), len(data))
+                    for k in range(min_len):
+                        if prev_data[k] != data[k]:
+                            changed_abs_offsets.add(start + k)
+                self._previous_hex_data[group.key] = bytearray(data)
+                hex_groups.append((group.label, data, start))
+        hex_dump.set_data(hex_groups, changed_abs_offsets)
 
         # Update variable table
         self._previous_values = dict(self._current_values)
