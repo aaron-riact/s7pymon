@@ -401,7 +401,7 @@ class S7MonitorApp(App):
                 str(var.source),
                 var.display_name,
                 var.type.value,
-                str(var.offset) + (f".{var.extra}" if var.type in (DataType.BIT, DataType.WORD, DataType.DWORD) and var.extra is not None else ""),
+                var.offset_display,
                 "—",
                 "—",
                 key=row_key,

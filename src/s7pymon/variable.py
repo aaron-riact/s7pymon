@@ -324,6 +324,13 @@ class Variable(ABC):
         return self.label or self.spec
 
     @property
+    def offset_display(self) -> str:
+        base = str(self.offset)
+        if self.extra is not None and self.type.byte_size > 0:
+            return f"{base}.{self.extra}"
+        return base
+
+    @property
     def byte_size(self) -> int:
         if self.type == DataType.STRING:
             if self.extra is None:

@@ -629,3 +629,31 @@ class TestEIPVariableParsing:
         data = b"\x01\x02"
         assert v_be.decode(data) == 0x0102
         assert v_le.decode(data) == 0x0201
+
+    def test_offset_display_bit_shows_extra(self):
+        v = S7Variable.parse("EIP.Input.Bit0.3")
+        assert v.offset_display == "0.3"
+
+    def test_offset_display_word_bit_shows_extra(self):
+        v = S7Variable.parse("EIP.Input.Word4.f")
+        assert v.offset_display == "4.15"
+
+    def test_offset_display_word_no_bit_no_extra(self):
+        v = S7Variable.parse("EIP.Input.Word4")
+        assert v.offset_display == "4"
+
+    def test_offset_display_string_no_extra(self):
+        v = S7Variable.parse("DB1.String0.10")
+        assert v.offset_display == "0"
+
+    def test_offset_display_chars_no_extra(self):
+        v = S7Variable.parse("DB1.Chars0.10")
+        assert v.offset_display == "0"
+
+    def test_offset_display_dbit_shows_extra(self):
+        v = S7Variable.parse("DB1.DWord8.1f")
+        assert v.offset_display == "8.31"
+
+    def test_offset_display_byte_no_extra(self):
+        v = S7Variable.parse("EIP.Input.Byte0")
+        assert v.offset_display == "0"
