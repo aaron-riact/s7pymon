@@ -22,6 +22,7 @@ from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
+from textual.widgets._data_table import ColumnKey, RowKey
 
 from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
@@ -654,6 +655,22 @@ class S7MonitorApp(App):
         """Get the read group key for a variable."""
         return str(var.source)
 
+    def _apply_cell_updates(
+        self, updates: list[tuple[DataTable, str, str, object]]
+    ) -> None:
+        """Apply batched cell updates, refreshing each table once."""
+        touched: set[DataTable] = set()
+        for table, row_key_str, col_key_str, value in updates:
+            rk = RowKey(row_key_str)
+            ck = ColumnKey(col_key_str)
+            if rk not in table._row_locations or ck not in table._column_locations:
+                continue
+            table._data[rk][ck] = value
+            touched.add(table)
+        for table in touched:
+            table._update_count += 1
+            table.refresh()
+
     def _on_data_received(self, results: dict[str, tuple[bytearray, int]]) -> None:
         """Process received data from all groups on the main thread."""
         self._current_data = results
@@ -683,8 +700,9 @@ class S7MonitorApp(App):
         assert hd is not None
         hd.set_data(hex_groups, changed_abs_offsets, interesting_abs_offsets=all_interesting or None)
 
-        # Update variable tables
+        # Update variable tables — batch cell updates to minimise DataTable churn
         self._previous_values = dict(self._current_values)
+        cell_updates: list[tuple[DataTable, str, str, object]] = []
 
         for var in self._variables:
             group_key = self._group_key_for_var(var)
@@ -719,36 +737,32 @@ class S7MonitorApp(App):
                         raw_hex=raw_hex,
                     ))
 
-                # Update row (skip when value unchanged since previous poll)
+                # Queue cell update (applied in batch later)
                 row_key = self._row_keys.get(id(var))
                 if row_key is None:
                     continue
+                side = self._var_side(var)
+                table = self._tables[side]
                 if prev is None:
-                    # First poll — populate cell without flash
-                    side = self._var_side(var)
-                    table = self._tables[side]
-                    table.update_cell(row_key, self.COL_VALUE, formatted)
-                    table.update_cell(row_key, self.COL_RAW_HEX, raw_hex)
+                    cell_updates.append((table, row_key, self.COL_VALUE, formatted))
+                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
                     self._flash_active.discard(var.spec)
                 elif changed:
-                    side = self._var_side(var)
-                    table = self._tables[side]
-                    table.update_cell(row_key, self.COL_VALUE, Text(formatted, style="bold yellow"))
-                    table.update_cell(row_key, self.COL_RAW_HEX, raw_hex)
+                    cell_updates.append((table, row_key, self.COL_VALUE, Text(formatted, style="bold yellow")))
+                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
                     self._flash_active.add(var.spec)
                 elif var.spec in self._flash_active:
-                    # Flash was active, now stable — clear flash style
-                    side = self._var_side(var)
-                    table = self._tables[side]
-                    table.update_cell(row_key, self.COL_VALUE, formatted)
-                    table.update_cell(row_key, self.COL_RAW_HEX, raw_hex)
+                    cell_updates.append((table, row_key, self.COL_VALUE, formatted))
+                    cell_updates.append((table, row_key, self.COL_RAW_HEX, raw_hex))
                     self._flash_active.discard(var.spec)
 
             except Exception as e:
                 row_key = self._row_keys.get(id(var))
                 if row_key is not None:
                     side = self._var_side(var)
-                    self._tables[side].update_cell(row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
+                    cell_updates.append((self._tables[side], row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red")))
+
+        self._apply_cell_updates(cell_updates)
 
         # Update connection status poll count
         conn_status = self.query_one("#conn-status", ConnectionStatus)
