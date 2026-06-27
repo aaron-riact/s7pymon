@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-
+from rich.text import Text
 from textual.widgets import DataTable
 
 from s7pymon.app import HexDumpDisplay, S7MonitorApp, format_hex_dump
@@ -388,5 +388,31 @@ class TestRowKeyLookup:
                 app.action_edit_variable()
                 await pilot.pause()
                 assert app.screen is not app  # edit screen pushed
+
+        asyncio.run(run())
+
+    def test_flash_clears_on_stable_value(self, app):
+        """Flash style is cleared on first unchanged poll after a change."""
+        async def run():
+            async with app.run_test() as pilot:
+                # Call 1: populate initial value
+                app._on_data_received({"DB1": (bytearray([0x00, 0x01]), 0)})
+                await pilot.pause()
+
+                # Call 2: change value → flash applied
+                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)})
+                await pilot.pause()
+
+                table = app.query_one("#var-table-output", DataTable)
+                row_key = app._row_keys.get(id(app._variables[1]))  # DB1.Byte1
+                cell = table.get_cell(row_key, app.COL_VALUE)
+                assert isinstance(cell, Text)
+
+                # Call 3: same value → flash cleared (plain text restored)
+                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)})
+                await pilot.pause()
+
+                cell2 = table.get_cell(row_key, app.COL_VALUE)
+                assert not isinstance(cell2, Text)
 
         asyncio.run(run())

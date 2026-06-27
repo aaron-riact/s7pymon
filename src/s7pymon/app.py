@@ -103,6 +103,8 @@ class HexDumpDisplay(Static):
         self._selected_abs_offsets: dict[str, set[int]] = {}
 
     def set_selected_offsets(self, group_label: str, offsets: set[int]) -> None:
+        if self._selected_abs_offsets.get(group_label) == offsets:
+            return
         self._selected_abs_offsets[group_label] = offsets
         self.refresh()
 
@@ -144,7 +146,9 @@ class HexDumpDisplay(Static):
                     byte_abs = start + i + j
                     pair = f"{b:02X}"
                     group_selected = self._selected_abs_offsets.get(label, set())
-                    if byte_abs in group_selected:
+                    if byte_abs in group_selected and byte_abs in self._changed_abs_offsets:
+                        result.append(Text(pair, style="bold reverse #FF8800"))
+                    elif byte_abs in group_selected:
                         result.append(Text(pair, style="bold reverse"))
                     elif byte_abs in self._changed_abs_offsets:
                         result.append(Text(pair, style="bold #FF8800"))
@@ -448,7 +452,9 @@ class S7MonitorApp(App):
         self._row_keys: dict[int, str] = {}
         self._row_key_to_var: dict = {}
         self._previous_hex_data: dict[str, bytearray] = {}
+        self._flash_active: set[str] = set()
         self._tables: dict[str, DataTable] = {}
+        self._hex_dump: HexDumpDisplay | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -487,6 +493,7 @@ class S7MonitorApp(App):
         return table
 
     def on_mount(self) -> None:
+        self._hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
         self._tables["input"] = self._setup_table("var-table-input")
         self._tables["output"] = self._setup_table("var-table-output")
 
@@ -640,7 +647,6 @@ class S7MonitorApp(App):
         self._poll_count += 1
 
         # Build hex dump with byte-level flash detection
-        hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
         hex_groups: list[tuple[str, bytearray, int]] = []
         changed_abs_offsets: set[int] = set()
         for group in self._read_groups:
@@ -654,7 +660,9 @@ class S7MonitorApp(App):
                             changed_abs_offsets.add(start + k)
                 self._previous_hex_data[group.key] = bytearray(data)
                 hex_groups.append((group.label, data, start))
-        hex_dump.set_data(hex_groups, changed_abs_offsets)
+        hd = self._hex_dump
+        assert hd is not None
+        hd.set_data(hex_groups, changed_abs_offsets)
 
         # Update variable tables
         self._previous_values = dict(self._current_values)
@@ -693,18 +701,23 @@ class S7MonitorApp(App):
                         raw_hex=raw_hex,
                     ))
 
-                # Update row
-                value_display = Text(formatted, style=style) if changed else formatted
-                raw_display = Text(raw_hex, style=style) if changed else raw_hex
-
+                # Update row (only on change to reduce DataTable churn)
                 row_key = self._row_keys.get(id(var))
                 if row_key is None:
                     continue
-                side = self._var_side(var)
-                table = self._tables[side]
-                # Update existing row values
-                table.update_cell(row_key, self.COL_VALUE, value_display)
-                table.update_cell(row_key, self.COL_RAW_HEX, raw_display)
+                if changed:
+                    side = self._var_side(var)
+                    table = self._tables[side]
+                    table.update_cell(row_key, self.COL_VALUE, Text(formatted, style="bold yellow"))
+                    table.update_cell(row_key, self.COL_RAW_HEX, raw_hex)
+                    self._flash_active.add(var.spec)
+                elif var.spec in self._flash_active:
+                    # Flash was active, now stable — clear flash style
+                    side = self._var_side(var)
+                    table = self._tables[side]
+                    table.update_cell(row_key, self.COL_VALUE, formatted)
+                    table.update_cell(row_key, self.COL_RAW_HEX, raw_hex)
+                    self._flash_active.discard(var.spec)
 
             except Exception as e:
                 row_key = self._row_keys.get(id(var))
@@ -724,9 +737,10 @@ class S7MonitorApp(App):
         data_info = self._current_data.get(group_key)
         if data_info is None:
             return
-        hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
         offsets = set(range(var.offset, var.offset + var.byte_size))
-        hex_dump.set_selected_offsets(group_key, offsets)
+        hd = self._hex_dump
+        if hd is not None:
+            hd.set_selected_offsets(group_key, offsets)
 
     def _update_connection_state(self) -> None:
         conn_status = self.query_one("#conn-status", ConnectionStatus)
@@ -980,10 +994,11 @@ class S7MonitorApp(App):
 
     def action_toggle_hex(self) -> None:
         """Toggle hex dump collapse."""
-        hex_dump = self.query_one("#hex-dump", HexDumpDisplay)
-        hex_dump.collapsed = not hex_dump.collapsed
+        hd = self._hex_dump
+        assert hd is not None
+        hd.collapsed = not hd.collapsed
         log = self.query_one("#log-panel", RichLog)
-        if hex_dump.collapsed:
+        if hd.collapsed:
             log.write("[dim]Hex dump collapsed[/dim]")
         else:
             log.write("[dim]Hex dump expanded[/dim]")
