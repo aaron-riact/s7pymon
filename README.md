@@ -369,5 +369,5 @@ container queries) and targets recent Chromium-based browsers.
 ## Testing
 
 ```bash
-python -m pytest test/test_s7_monitor_*.py -v
+pytest tests/ -q
 ```

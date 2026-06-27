@@ -13,70 +13,13 @@ from s7pymon.engine import (
     WriteMode,
     format_hex_dump,
 )
-from s7pymon.protocols import Connection, DataSource, ReadResult
+from s7pymon.protocols import DataSource
 from s7pymon.variable import S7Area, DataType, S7Variable
-
-
-class FakeConnection(Connection):
-    """Minimal S7Connection stand-in driven by a dict of area buffers."""
-
-    def __init__(self, buffers: dict[tuple, bytearray] | None = None):
-        self._config = ConnectionConfig(address="10.0.0.5")
-        self._state = ConnectionState.CONNECTED
-        self._buffers: dict[tuple, bytearray] = buffers or {}
-        self.writes: list[tuple] = []
-        self.connect_calls = 0
-        self.disconnect_calls = 0
-        self.read_error: Exception | None = None
-
-    @property
-    def config(self) -> ConnectionConfig:
-        return self._config
-
-    @property
-    def state(self) -> ConnectionState:
-        return self._state
-
-    @state.setter
-    def state(self, value: ConnectionState) -> None:
-        self._state = value
-
-    @property
-    def connected(self) -> bool:
-        return self._state == ConnectionState.CONNECTED
-
-    def connect(self) -> None:
-        self.connect_calls += 1
-        self._state = ConnectionState.CONNECTED
-
-    def disconnect(self) -> None:
-        self.disconnect_calls += 1
-        self._state = ConnectionState.DISCONNECTED
-
-    def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
-        if self.read_error is not None:
-            self._state = ConnectionState.ERROR
-            raise self.read_error
-        area, db = self._parse(source)
-        buf = self._buffers.get((area, db), bytearray(64))
-        return ReadResult(data=bytearray(buf[offset : offset + size]),
-                          source=source, start=offset, size=size)
-
-    def write_source(self, source: DataSource, offset: int, data: bytearray) -> None:
-        self.writes.append((source, offset, bytes(data)))
-        area, db = self._parse(source)
-        buf = self._buffers.setdefault((area, db), bytearray(64))
-        buf[offset : offset + len(data)] = data
-
-    @staticmethod
-    def _parse(source: DataSource) -> tuple:
-        if source.value.startswith("DB"):
-            return S7Area.DB, int(source.value[2:])
-        return S7Area(source.value), 0
+from tests.fakes import BaseFakeConnection
 
 
 def make_engine(buffers, variables, **kw):
-    conn = FakeConnection(buffers)
+    conn = BaseFakeConnection(buffers)
     groups = kw.pop("groups", None)
     if groups is None:
         # one DB group covering 0..16 by default
