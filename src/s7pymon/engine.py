@@ -335,7 +335,7 @@ class MonitorEngine:
 
         if self._rules_engine is not None:
             try:
-                self._rules_engine.apply(self._connection, self._current_values)
+                self._rules_engine.apply(self._connection, self._current_values, buffers)
             except Exception:
                 log.exception("Output rules failed")
 

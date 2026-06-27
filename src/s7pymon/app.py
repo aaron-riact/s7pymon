@@ -646,7 +646,7 @@ class S7MonitorApp(App):
     def _apply_rules(self, buffers: dict[str, tuple[bytearray, int]]) -> None:
         if self._rules_engine is None:
             return
-        self._rules_engine.apply(self._connection, {})
+        self._rules_engine.apply(self._connection, {}, buffers)
 
     def trigger_pulse(self, target: str) -> None:
         if self._rules_engine is None:
