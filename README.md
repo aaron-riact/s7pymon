@@ -104,6 +104,12 @@ s7pymon 192.168.1.100 --rack 0 --slot 2 --port 1102 --interval 0.25 DB210.Byte0
 | `Real` | 4 bytes | 32-bit float |
 | `Bit` | 1 byte | Requires bit number: `Bit0.3` = byte 0, bit 3 |
 | `String` | N+2 bytes | Requires max length: `String0.32` |
+| `Chars` | N bytes | Raw ASCII, null-padded: `Chars0.32` = 32 bytes at offset 0 |
+
+> **Byte-offset addressing**: The `<Offset>` value is a **byte address** (S7 convention).
+> `Word0` = bytes 0–1, `Word2` = bytes 2–3, `Word4` = bytes 4–5.
+> Multi-byte types should use aligned offsets (even for 2-byte types, multiples of 4 for
+> 4-byte types) to avoid overlapping addresses.
 
 ### EtherNet/IP variable spec
 
@@ -120,6 +126,7 @@ Where `<Assembly>` is `Input`, `Output`, or `Config`.
 | `EIP.Output.DWord8:setpoint` | Output assembly, unsigned 32-bit at offset 8 |
 | `EIP.Input.Bit0.3:limit_switch` | Input assembly, bit 3 of byte 0 |
 | `EIP.Output.Bit0.0:watchdog` | Output assembly, bit 0 of byte 0 |
+| `EIP.Input.Chars44.32:program` | Input assembly, 32 raw ASCII bytes at offset 44 |
 
 ### Config files
 
@@ -205,6 +212,40 @@ Manual pulse is available via the command bar:
 pulse EIP.Output.Bit0.0   # trigger a pulse rule for 1 cycle
 pulse EIP.Output.Bit0.0 5 # trigger a pulse rule for 5 cycles
 ```
+
+### Field variables (register maps)
+
+Instead of computing byte offsets by hand, you can use register-based addressing
+to describe how a block of data maps to external hardware. This is common with
+EIP assemblies that map to PLC or CNC registers.
+
+A `field_vars` entry specifies a base register, register bit-width, and a list of
+register entries. Each register entry is a register number followed by variable
+specs using **register-local** byte offsets. The engine expands them into
+ordinary variables with absolute assembly offsets.
+
+```yaml
+field_vars:
+  EIP.Input:
+    base_register: 18178
+    register_width_bits: 16
+    fields:
+      - 18178:
+          - Bit0.0:heartbeat
+          - Bit0.1:machine_ready
+          - Bit0.2:robot_stop_request
+      - 18200:
+          - Chars0.32:program
+```
+
+**Offset calculation**: `register_width_bits = 16` → step = 2 bytes per register.
+Register 18178 maps to assembly offset 0, register 18179 maps to offset 2, and
+so on. Each variable's absolute offset = register base offset + its local
+offset. For example, `Chars0.32` at register 18200 expands to
+`EIP.Input.Chars44.32` (absolute offset 44 = (18200 − 18178) × 2).
+
+These expand to flat `EIPVariable` instances at config load time, so they work
+with rules, the TUI, and the web dashboard with no additional changes.
 
 ### Options
 
