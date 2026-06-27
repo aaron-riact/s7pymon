@@ -614,41 +614,9 @@ class S7MonitorApp(App):
             self.call_from_thread(self._update_connection_state)
 
     def _apply_rules(self, buffers: dict[str, tuple[bytearray, int]]) -> None:
-        """Decode current values from buffers and run rules (worker thread)."""
         if self._rules_engine is None:
             return
-        current_values: dict[str, str] = {}
-        for var in self._variables:
-            key = str(var.source)
-            entry = buffers.get(key)
-            if entry is None:
-                continue
-            data, data_start = entry
-            try:
-                value = extract_value(var, data, data_start)
-                current_values[var.spec] = var.format_value(value)
-                if var.label:
-                    current_values[var.label] = current_values[var.spec]
-            except Exception:
-                pass
-
-        # Resolve follow rule sources not backed by a defined variable
-        for rule in self._rules_engine.rules:
-            source: str | None = getattr(rule, "source", None)
-            if source is None or source in current_values:
-                continue
-            try:
-                var = Variable.parse(source)
-                key = str(var.source)
-                entry = buffers.get(key)
-                if entry is not None:
-                    data, data_start = entry
-                    value = extract_value(var, data, data_start)
-                    current_values[source] = var.format_value(value)
-            except Exception:
-                pass
-
-        self._rules_engine.apply(self._connection, current_values)
+        self._rules_engine.apply(self._connection, {})
 
     def trigger_pulse(self, target: str) -> None:
         if self._rules_engine is None:
