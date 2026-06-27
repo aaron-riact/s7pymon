@@ -55,6 +55,7 @@ No Makefile. Build system is `uv_build`.
 - **Rules** (`rules.py`): `FollowRule`, `ToggleRule`, `PulseRule`. Poll-cycle counters (not wall-clock time). Pulse is manual-trigger only.
 - **Field vars** (`field_vars.py`): register-map expansion for EIP assemblies. Uses `base_register` + `register_width_bits` to compute absolute byte offsets.
 - **`build_eip_read_groups()`** (`eip.py`): creates Input + Output read groups from config (not from variable coverage).
+- **`HexDumpDisplay`** (`app.py`): extends `Static` with a single `render()` method that builds a `Text` for all groups. Could be refactored to the Line API (`render_line(y)`) for per-line refresh, avoiding full-widget repaints when flash/selection changes on a single byte. The interesting-only toggle already reduces rendered rows for the common case.
 
 ## Variable spec conventions
 
