@@ -440,6 +440,7 @@ class S7MonitorApp(App):
         self._row_keys: dict[int, str] = {}
         self._row_key_to_var: dict = {}
         self._previous_hex_data: dict[str, bytearray] = {}
+        self._tables: dict[str, DataTable] = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -478,12 +479,12 @@ class S7MonitorApp(App):
         return table
 
     def on_mount(self) -> None:
-        input_table = self._setup_table("var-table-input")
-        output_table = self._setup_table("var-table-output")
+        self._tables["input"] = self._setup_table("var-table-input")
+        self._tables["output"] = self._setup_table("var-table-output")
 
         for var in self._variables:
             side = self._var_side(var)
-            table = input_table if side == "input" else output_table
+            table = self._tables[side]
             row_key = f"var_{id(var)}"
             self._row_keys[id(var)] = row_key
             self._row_key_to_var[row_key] = var
@@ -692,7 +693,7 @@ class S7MonitorApp(App):
                 if row_key is None:
                     continue
                 side = self._var_side(var)
-                table = self.query_one(f"#var-table-{side}", DataTable)
+                table = self._tables[side]
                 # Update existing row values
                 table.update_cell(row_key, self.COL_VALUE, value_display)
                 table.update_cell(row_key, self.COL_RAW_HEX, raw_display)
@@ -701,8 +702,7 @@ class S7MonitorApp(App):
                 row_key = self._row_keys.get(id(var))
                 if row_key is not None:
                     side = self._var_side(var)
-                    table = self.query_one(f"#var-table-{side}", DataTable)
-                    table.update_cell(row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
+                    self._tables[side].update_cell(row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red"))
 
         # Update connection status poll count
         conn_status = self.query_one("#conn-status", ConnectionStatus)
@@ -721,8 +721,7 @@ class S7MonitorApp(App):
         return True
 
     def _focused_table(self) -> DataTable | None:
-        for table_id in ("var-table-input", "var-table-output"):
-            table = self.query_one(f"#{table_id}", DataTable)
+        for table in self._tables.values():
             if table.has_focus:
                 return table
         return None
