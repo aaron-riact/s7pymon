@@ -759,13 +759,12 @@ class S7MonitorApp(App):
         if var is None:
             return
         group_key = self._group_key_for_var(var)
-        data_info = self._current_data.get(group_key)
-        if data_info is None:
+        if group_key not in self._current_data:
             return
-        offsets = set(range(var.offset, var.offset + var.byte_size))
         hd = self._hex_dump
-        if hd is not None:
-            hd.set_selected_offsets(group_key, offsets)
+        if hd is None or hd.collapsed:
+            return
+        hd.set_selected_offsets(group_key, set(range(var.offset, var.offset + var.byte_size)))
 
     def _update_connection_state(self) -> None:
         conn_status = self.query_one("#conn-status", ConnectionStatus)
