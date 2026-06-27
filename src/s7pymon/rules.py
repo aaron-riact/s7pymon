@@ -74,10 +74,7 @@ class RulesEngine:
         raise KeyError(f"No pulse rule for {target!r}")
 
     def apply(
-        self,
-        connection: Connection,
-        current_values: dict[str, str],
-        buffers: dict[str, tuple[bytearray, int]] | None = None,
+        self, connection: Connection, current_values: dict[str, str]
     ) -> None:
         log.debug("apply() with %d rules, %d values", len(self._states), len(current_values))
         for state in self._states:
@@ -85,7 +82,7 @@ class RulesEngine:
             if isinstance(rule, FollowRule):
                 self._apply_follow(rule, state.target, connection, current_values)
             elif isinstance(rule, ToggleRule):
-                self._apply_toggle(rule, state, connection, buffers)
+                self._apply_toggle(rule, state, connection)
             elif isinstance(rule, PulseRule):
                 self._apply_pulse(state, connection)
 
@@ -113,13 +110,7 @@ class RulesEngine:
             encoded = target_var.encode(parsed)
         connection.write_source(target_var.source, target_var.offset, encoded)
 
-    def _apply_toggle(
-        self,
-        rule: ToggleRule,
-        state: _RuleState,
-        connection: Connection,
-        buffers: dict[str, tuple[bytearray, int]] | None = None,
-    ) -> None:
+    def _apply_toggle(self, rule: ToggleRule, state: _RuleState, connection: Connection) -> None:
         state.counter += 1
         log.debug("toggle %s period=%d counter=%d/%d", rule.target, rule.period, state.counter, rule.period)
         if state.counter < rule.period:
@@ -127,27 +118,17 @@ class RulesEngine:
         state.counter = 0
         state.toggle_on = not state.toggle_on
         log.debug("toggle %s -> firing, new_state=%s", rule.target, state.toggle_on)
-        self._write_bit_state(connection, state.target, state.toggle_on, buffers)
+        self._write_bit_state(connection, state.target, state.toggle_on)
 
     def _write_bit_state(
         self,
         connection: Connection,
         var: Variable,
         state: bool,
-        buffers: dict[str, tuple[bytearray, int]] | None = None,
     ) -> None:
         if var.type == DataType.BIT:
-            # Use the buffer from the poll cycle instead of a separate read
-            current_byte = None
-            if buffers is not None:
-                entry = buffers.get(str(var.source))
-                if entry is not None:
-                    data, data_start = entry
-                    current_byte = data[var.offset - data_start]
-            if current_byte is None:
-                current = connection.read_source(var.source, var.offset, 1)
-                current_byte = current.data[0]
-            encoded = var.encode_bit(current_byte, state)
+            current = connection.read_source(var.source, var.offset, 1)
+            encoded = var.encode_bit(current.data[0], state)
         else:
             encoded = var.encode(1 if state else 0)
         connection.write_source(var.source, var.offset, encoded)
@@ -155,6 +136,6 @@ class RulesEngine:
     def _apply_pulse(self, state: _RuleState, connection: Connection) -> None:
         if state.pulse_remaining > 0:
             state.pulse_remaining -= 1
-            self._write_bit_state(connection, state.target, True, None)
+            self._write_bit_state(connection, state.target, True)
         else:
-            self._write_bit_state(connection, state.target, False, None)
+            self._write_bit_state(connection, state.target, False)
