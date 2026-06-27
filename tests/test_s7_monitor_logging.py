@@ -87,7 +87,13 @@ class TestDataLoggerCSV:
 
 class TestDataLoggerJSONL:
     def test_jsonl_output(self, tmp_path, sample_metadata, sample_entry):
-        meta = SessionMetadata(**{**sample_metadata.__dict__, "format": "jsonl"})
+        meta = SessionMetadata(
+            started=sample_metadata.started,
+            address=sample_metadata.address,
+            variables=sample_metadata.variables,
+            poll_interval=sample_metadata.poll_interval,
+            format="jsonl",
+        )
         log_path = tmp_path / "test.jsonl"
         with DataLogger(log_path, LogFormat.JSONL, meta) as logger:
             logger.log(sample_entry)
@@ -118,7 +124,13 @@ class TestLoadLogFile:
         assert entries[0].new_value == "37"
 
     def test_load_jsonl(self, tmp_path, sample_metadata, sample_entry):
-        meta = SessionMetadata(**{**sample_metadata.__dict__, "format": "jsonl"})
+        meta = SessionMetadata(
+            started=sample_metadata.started,
+            address=sample_metadata.address,
+            variables=sample_metadata.variables,
+            poll_interval=sample_metadata.poll_interval,
+            format="jsonl",
+        )
         log_path = tmp_path / "test.jsonl"
         with DataLogger(log_path, LogFormat.JSONL, meta) as logger:
             logger.log(sample_entry)
@@ -159,7 +171,13 @@ class TestLoadLogFile:
             assert orig.offset == loaded.offset
 
     def test_roundtrip_jsonl(self, tmp_path, sample_metadata):
-        meta = SessionMetadata(**{**sample_metadata.__dict__, "format": "jsonl"})
+        meta = SessionMetadata(
+            started=sample_metadata.started,
+            address=sample_metadata.address,
+            variables=sample_metadata.variables,
+            poll_interval=sample_metadata.poll_interval,
+            format="jsonl",
+        )
         log_path = tmp_path / "test.jsonl"
         with DataLogger(log_path, LogFormat.JSONL, meta) as logger:
             for i in range(3):
