@@ -405,7 +405,7 @@ class TestRowKeyLookup:
         asyncio.run(run())
 
     def test_flash_clears_on_stable_value(self, app):
-        """Flash style is cleared on first unchanged poll after a change."""
+        """Flash persists for 300ms then clears on subsequent no-change polls."""
         async def run():
             async with app.run_test() as pilot:
                 # Call 1: populate initial value
@@ -421,11 +421,17 @@ class TestRowKeyLookup:
                 cell = table.get_cell(row_key, app.COL_VALUE)
                 assert isinstance(cell, Text)
 
-                # Call 3: same value → flash cleared (plain text restored)
+                # Call 3: same value → flash persists (300ms window)
                 app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": set()})
                 await pilot.pause()
-
                 cell2 = table.get_cell(row_key, app.COL_VALUE)
-                assert not isinstance(cell2, Text)
+                assert isinstance(cell2, Text)
+
+                # Expire flash → next no-change clears it
+                app._flash_active[app._variables[1].spec] = 0.0
+                app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": set()})
+                await pilot.pause()
+                cell3 = table.get_cell(row_key, app.COL_VALUE)
+                assert not isinstance(cell3, Text)
 
         asyncio.run(run())
