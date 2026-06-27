@@ -604,10 +604,10 @@ class S7MonitorApp(App):
                 result = self._connection.read_source(group.source, group.start, group.size)
                 results[group.key] = (result.data, group.start)
 
+            self.call_from_thread(self._on_data_received, results)
+
             if self._rules_engine is not None:
                 self._apply_rules(results)
-
-            self.call_from_thread(self._on_data_received, results)
         except Exception as e:
             log = self.query_one("#log-panel", RichLog)
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
