@@ -12,6 +12,7 @@ dependencies = [
     "python-snap7>=2.0",
     "pyyaml>=6.0",
     "textual>=3.0",
+    "ethernetip>=1.1.2",
 ]
 
 [project.scripts]
@@ -35,6 +36,9 @@ addopts = "--strict-markers"
 testpaths = ["tests"]
 # tests/fakes.py is imported as tests.fakes, so the repo root must be importable.
 pythonpath = ["."]
+
+[tool.uv.sources]
+ethernetip = { path = "../ethernetip-stuff/python-ethernetip", editable = true }
 
 [tool.ty]
 environment.root = ["."]

@@ -24,6 +24,26 @@ wheels = [
 ]
 
 [[package]]
+name = "dpkt"
+version = "1.9.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/7d/52f17a794db52a66e46ebb0c7549bf2f035ed61d5a920ba4aaa127dd038e/dpkt-1.9.8.tar.gz", hash = "sha256:43f8686e455da5052835fd1eda2689d51de3670aac9799b1b00cfd203927ee45", size = 180073, upload-time = "2022-08-18T05:54:13.582Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/79/479e2194c9096b92aecdf33634ae948d2be306c6011673e98ee1917f32c2/dpkt-1.9.8-py3-none-any.whl", hash = "sha256:4da4d111d7bf67575b571f5c678c71bddd2d8a01a3d57d489faf0a92c748fbfd", size = 194973, upload-time = "2022-08-18T05:54:10.793Z" },
+]
+
+[[package]]
+name = "ethernetip"
+version = "1.1.2"
+source = { editable = "../ethernetip-stuff/python-ethernetip" }
+dependencies = [
+    { name = "dpkt" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "dpkt" }]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -217,6 +237,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "ethernetip" },
     { name = "python-snap7" },
     { name = "pyyaml" },
     { name = "textual" },
@@ -231,6 +252,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
+    { name = "ethernetip", editable = "../ethernetip-stuff/python-ethernetip" },
     { name = "python-snap7", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "textual", specifier = ">=3.0" },
