@@ -35,5 +35,5 @@ addopts = "--strict-markers"
 testpaths = ["tests"]
 
 [tool.ty]
-src.exclude = ["tests"]
 environment.root = ["."]
+# Tests are type-checked too — all test files pass cleanly.
