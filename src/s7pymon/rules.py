@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from collections.abc import Sequence
 
 from .protocols import Connection
 from .variable import DataType, Variable
@@ -58,7 +59,7 @@ class _RuleState:
 
 
 class RulesEngine:
-    def __init__(self, rules: list[OutputRule]):
+    def __init__(self, rules: Sequence[OutputRule]):
         self._states = [_RuleState(rule, Variable.parse(rule.target)) for rule in rules]
 
     @property
