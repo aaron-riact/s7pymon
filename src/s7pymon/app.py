@@ -665,23 +665,24 @@ class S7MonitorApp(App):
     def _apply_cell_updates(
         self, updates: list[tuple[DataTable, str, str, object]]
     ) -> None:
-        """Apply batched cell updates, refreshing each table once."""
-        touched: set[DataTable] = set()
+        """Apply batched cell updates, refreshing each changed row."""
+        touched_rows: dict[DataTable, set[RowKey]] = {}
         for table, row_key_str, col_key_str, value in updates:
             rk = RowKey(row_key_str)
             ck = ColumnKey(col_key_str)
             if rk not in table._row_locations or ck not in table._column_locations:
                 continue
             table._data[rk][ck] = value
-            touched.add(table)
-        for table in touched:
+            touched_rows.setdefault(table, set()).add(rk)
+        for table in touched_rows:
             table._update_count += 1
-        # Throttle refresh to at most once per poll interval
+        # Throttle row refreshes to at most once per poll interval
         now = time.monotonic()
         if now - getattr(self, '_last_table_refresh', 0.0) > self._poll_interval:
             self._last_table_refresh = now
-            for table in touched:
-                table.refresh()
+            for table, rks in touched_rows.items():
+                for rk in rks:
+                    table.refresh_row(table.get_row_index(rk))
 
     def _on_data_received(
         self,
