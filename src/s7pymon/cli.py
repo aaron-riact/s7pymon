@@ -38,7 +38,7 @@ import click
 
 from .config import S7MonitorConfig
 from .connection import S7Connection
-from .eip import EIPConnection
+from .eip import EIPConnection, build_eip_read_groups
 from .errors import dump_errors
 from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
@@ -232,7 +232,10 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
                     f"--db {cfg.db} conflicts with variable DBs {db_dbs}"
                 )
 
-        read_groups = build_read_groups(parsed_vars)
+        if protocol == "eip":
+            read_groups = build_eip_read_groups(conn_config)
+        else:
+            read_groups = build_read_groups(parsed_vars)
 
         if protocol == "s7" and cfg.size is not None:
             db_start_val = cfg.start if cfg.start is not None else 0
@@ -244,28 +247,6 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
                 if group.source in wanted:
                     group.size = max(group.size, cfg.size)
                     group.start = min(group.start, db_start_val)
-
-        if protocol == "eip":
-            for group in read_groups:
-                src = str(group.source).lower()
-                if "input" in src:
-                    group.start = 0
-                    group.size = max(group.size, cfg.input_size or 32)
-                elif "output" in src:
-                    group.start = 0
-                    group.size = max(group.size, cfg.output_size or 32)
-
-            # Ensure all configured assemblies have a read group even when
-            # no variable references them (common with field_vars for Input only)
-            existing = {str(g.source) for g in read_groups}
-            for name, default_asm, default_size in [
-                ("Input", cfg.input_assembly or 101, cfg.input_size or 32),
-                ("Output", cfg.output_assembly or 100, cfg.output_size or 32),
-            ]:
-                src = DataSource.eip(name)
-                if str(src) not in existing:
-                    read_groups.append(ReadGroup(src, start=0, size=default_size))
-            read_groups.sort(key=lambda g: str(g.source))
 
     elif protocol == "s7" and cfg.db is not None and cfg.size is not None:
         db_start_val = cfg.start if cfg.start is not None else 0
