@@ -698,7 +698,12 @@ class S7MonitorApp(App):
 
         hd = self._hex_dump
         assert hd is not None
-        hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
+        # Skip hex dump refresh when nothing changed and no stale flash
+        if all_changed_abs or not hd._group_data:
+            hd.set_data(hex_groups, all_changed_abs, interesting_abs_offsets=all_interesting or None)
+        elif hd._changed_abs_offsets:
+            hd._changed_abs_offsets = set()
+            hd.refresh(layout=False)
 
         # Update connection status
         conn_status = self.query_one("#conn-status", ConnectionStatus)
