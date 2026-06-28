@@ -84,10 +84,9 @@ class ConnectionStatus(Static):
         result = Text("  ") + indicator + status
         if self.config_text:
             result += Text(f"  │  {self.config_text}", style="dim")
-        if self.poll_count > 0:
-            result += Text(f"  │  polls: {self.poll_count}", style="dim")
-
         extra = self.status_extra
+        if not extra and self.poll_count > 0:
+            result += Text(f"  │  polls: {self.poll_count}", style="dim")
         if extra:
             parts = "  ".join(f"{k}: {v}" for k, v in extra.items())
             result += Text(f"  │  {parts}", style="dim")

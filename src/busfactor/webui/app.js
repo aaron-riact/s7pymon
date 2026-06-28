@@ -193,11 +193,13 @@ function applySnapshot(s) {
   els.status.state = s.connection_state;
   setPaused(s.paused);
   if (s.write_mode && s.write_mode !== writeMode) setWriteMode(s.write_mode);
-  els.polls.textContent = s.poll_count;
-
   if (s.status_extra) {
+    els.polls.style.display = "none";
     const parts = Object.entries(s.status_extra).map(([k, v]) => `${k}: ${v}`);
     els.extra.textContent = parts.join("  ");
+  } else {
+    els.polls.style.display = "";
+    els.polls.textContent = s.poll_count;
   }
 
   if (s.error) log(s.error, "err");
