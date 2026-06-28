@@ -3,7 +3,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from s7pymon.config import S7MonitorConfig
+from busfactor.config import S7MonitorConfig
 
 
 class TestS7MonitorConfigFromYaml:

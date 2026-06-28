@@ -2,8 +2,8 @@
 
 import pytest
 
-from s7pymon.field_vars import expand_field_vars
-from s7pymon.variable import DataType, EIPVariable
+from busfactor.field_vars import expand_field_vars
+from busfactor.variable import DataType, EIPVariable
 
 
 class TestExpandFieldVars:
@@ -263,8 +263,8 @@ class TestExpandFieldVarsIntegration:
 
     def test_field_vars_and_flat_variables_merge(self):
         """field_vars and variables are merged into one list via resolve_runtime."""
-        from s7pymon.cli import resolve_runtime
-        from s7pymon.config import S7MonitorConfig
+        from busfactor.cli import resolve_runtime
+        from busfactor.config import S7MonitorConfig
 
         cfg = S7MonitorConfig(
             address="10.0.0.1",
@@ -288,8 +288,8 @@ class TestExpandFieldVarsIntegration:
 
     def test_field_vars_without_flat_variables(self):
         """field_vars alone (no flat variables) works."""
-        from s7pymon.cli import resolve_runtime
-        from s7pymon.config import S7MonitorConfig
+        from busfactor.cli import resolve_runtime
+        from busfactor.config import S7MonitorConfig
 
         cfg = S7MonitorConfig(
             address="10.0.0.1",

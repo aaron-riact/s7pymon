@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from s7pymon.connection import ConnectionConfig, ConnectionState, ReadResult, S7Connection
-from s7pymon.engine import (
+from busfactor.connection import ConnectionConfig, ConnectionState, ReadResult, S7Connection
+from busfactor.engine import (
     MonitorEngine,
     ReadGroup,
     Snapshot,
@@ -13,8 +13,8 @@ from s7pymon.engine import (
     WriteMode,
     format_hex_dump,
 )
-from s7pymon.protocols import DataSource
-from s7pymon.variable import S7Area, DataType, S7Variable
+from busfactor.protocols import DataSource
+from busfactor.variable import S7Area, DataType, S7Variable
 from tests.fakes import BaseFakeConnection
 
 

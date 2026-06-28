@@ -1,4 +1,4 @@
-# s7pymon — Live industrial protocol monitor (S7 + EtherNet/IP)
+# busfactor — Live industrial protocol monitor (S7 + EtherNet/IP)
 
 A modern terminal UI and web dashboard for live-monitoring and writing
 industrial controller data. Supports **Siemens S7** (via python-snap7) and
@@ -14,8 +14,8 @@ industrial controller data. Supports **Siemens S7** (via python-snap7) and
 - **Write with confirmation** — edit values, toggle bits, or use the command bar; all writes require explicit confirmation
 - **Output rules** — Follow (copy input to output), Toggle (heartbeat), Pulse (one-shot) for automatic assembly management
 - **Keyboard-driven** — no mouse needed
-- **Web dashboard** — an ultra-modern browser UI streaming live data over Server-Sent Events (`s7pymon-web`), with zero extra dependencies
-- **Built-in demo** — launch the full browser dashboard with synthetic live PLC data using `s7pymon-demo`
+- **Web dashboard** — an ultra-modern browser UI streaming live data over Server-Sent Events (`busfactor-web`), with zero extra dependencies
+- **Built-in demo** — launch the full browser dashboard with synthetic live PLC data using `busfactor-demo`
 - **Cross-protocol** — monitor S7 DBs and EIP assemblies side-by-side; Follow rules can copy between protocols
 
 ## Requirements
@@ -45,38 +45,38 @@ pip install -e .
 ### Without installing the package
 
 ```bash
-python -m s7pymon.cli --help
+python -m busfactor.cli --help
 
 # or add src/ to PYTHONPATH:
-PYTHONPATH=src:$PYTHONPATH python -c "from s7pymon.cli import main; main()" --help
+PYTHONPATH=src:$PYTHONPATH python -c "from busfactor.cli import main; main()" --help
 ```
 
 ## Usage
 
 ```
-s7pymon [OPTIONS] ADDRESS [VARIABLES...]
+busfactor [OPTIONS] ADDRESS [VARIABLES...]
 ```
 
 ### Quick start
 
 ```bash
 # Monitor a raw DB range (auto-creates Byte variables)
-s7pymon 192.168.1.100 --db 210 --start 0 --size 18
+busfactor 192.168.1.100 --db 210 --start 0 --size 18
 
 # Monitor specific variables
-s7pymon 192.168.1.100 DB210.Byte0 DB210.Int4 DB210.Real8
+busfactor 192.168.1.100 DB210.Byte0 DB210.Int4 DB210.Real8
 
 # Named variables
-s7pymon 192.168.1.100 DB210.Byte0:heartbeat DB210.Byte1:status DB210.Bit1.0:e_stop
+busfactor 192.168.1.100 DB210.Byte0:heartbeat DB210.Byte1:status DB210.Bit1.0:e_stop
 
 # Monitor DB + process inputs together
-s7pymon 192.168.1.100 DB210.Byte0 EB.Byte0 EB.Byte1
+busfactor 192.168.1.100 DB210.Byte0 EB.Byte0 EB.Byte1
 
 # Process outputs and merker flags
-s7pymon 192.168.1.100 AB.Byte0:output0 MB.Byte0:flag0
+busfactor 192.168.1.100 AB.Byte0:output0 MB.Byte0:flag0
 
 # Custom connection settings
-s7pymon 192.168.1.100 --rack 0 --slot 2 --port 1102 --interval 0.25 DB210.Byte0
+busfactor 192.168.1.100 --rack 0 --slot 2 --port 1102 --interval 0.25 DB210.Byte0
 ```
 
 ### Variable spec format
@@ -169,8 +169,8 @@ variables:
 Usage:
 
 ```bash
-s7pymon -c monitor.yaml
-s7pymon-web -c eip-monitor.yaml --open
+busfactor -c monitor.yaml
+busfactor-web -c eip-monitor.yaml --open
 ```
 
 ### Output rules
@@ -289,7 +289,7 @@ that will be written. Press **Y** to confirm or **N** / **Escape** to cancel.
 
 ## Web interface
 
-In addition to the terminal UI, `s7pymon` ships a live browser dashboard with
+In addition to the terminal UI, `busfactor` ships a live browser dashboard with
 an ultra-modern neon/glassmorphism theme. It reuses the same monitoring core
 (connection, decode, change-detection, logging, write modes) as the TUI and
 adds **no new Python dependencies** — the server is built on the standard
@@ -297,8 +297,8 @@ library `http.server` and pushes live telemetry over **Server-Sent Events**.
 
 ```bash
 # Same arguments as the TUI, plus web options
-s7pymon-web 192.168.1.100 --db 210 --start 0 --size 18 --open
-s7pymon-web 192.168.1.100 DB210.Byte0:heartbeat DB210.Int4:temp --http-port 8730
+busfactor-web 192.168.1.100 --db 210 --start 0 --size 18 --open
+busfactor-web 192.168.1.100 DB210.Byte0:heartbeat DB210.Int4:temp --http-port 8730
 ```
 
 ### Quick browser demo
@@ -307,10 +307,10 @@ If you want to show the UI without a PLC, start the built-in demo:
 
 ```bash
 # installed package
-s7pymon-demo --open
+busfactor-demo --open
 
 # or from a checkout
-uv run s7pymon-demo --open
+uv run busfactor-demo --open
 ```
 
 That starts the same dashboard at `http://127.0.0.1:8731/`, but feeds it with

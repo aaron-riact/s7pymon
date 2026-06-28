@@ -1,13 +1,13 @@
 import pytest
 from click.testing import CliRunner
 
-from s7pymon.logging import (
+from busfactor.logging import (
     DataLogger,
     LogEntry,
     LogFormat,
     SessionMetadata,
 )
-from s7pymon.replay import replay_main
+from busfactor.replay import replay_main
 
 
 @pytest.fixture

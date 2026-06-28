@@ -1375,7 +1375,7 @@ class S7MonitorApp(App):
         )
         console.print(screen_render)
         text = console.export_text(styles=False)
-        filename = generate_datetime_filename("s7pymon", ".txt")
+        filename = generate_datetime_filename("busfactor", ".txt")
         with open(filename, "w", encoding="utf-8") as f:
             f.write(text)
         log = self.query_one("#log-panel", RichLog)

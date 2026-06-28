@@ -1,6 +1,6 @@
-"""Built-in browser demo for s7pymon.
+"""Built-in browser demo for busfactor.
 
-This module exposes a first-class ``s7pymon-demo`` command that starts the same
+This module exposes a first-class ``busfactor-demo`` command that starts the same
 web dashboard used for real PLCs, but backed by a synthetic DB buffer with
 plausible changing values. That makes it easy to demo the UI without a Siemens
 controller on hand.
@@ -47,7 +47,7 @@ class DemoConnection(Connection):
         self._buffers: dict[tuple[S7Area, int], bytearray] = {(S7Area.DB, DEMO_DB): bytearray(16)}
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="s7pymon-demo", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="busfactor-demo", daemon=True)
         self._tick = 0
         with self._lock:
             self._advance_locked()
@@ -187,7 +187,7 @@ def demo_web_cli(
     write_mode: str,
     seed: int | None,
 ) -> None:
-    """s7pymon-demo — Launch the browser dashboard with simulated PLC data."""
+    """busfactor-demo — Launch the browser dashboard with simulated PLC data."""
 
     engine, connection = build_demo_engine(
         poll_interval=interval,
@@ -199,7 +199,7 @@ def demo_web_cli(
     server.start()
     click.echo("Starting built-in demo PLC for the web dashboard.")
     click.echo(f"Demo source: {connection.config.display}  (synthetic DB{DEMO_DB} values)")
-    click.echo(f"s7pymon-demo serving at {server.url}  (Ctrl-C to stop)")
+    click.echo(f"busfactor-demo serving at {server.url}  (Ctrl-C to stop)")
     if open_browser:
         import webbrowser
 

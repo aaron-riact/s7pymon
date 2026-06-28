@@ -1,4 +1,4 @@
-"""A dependency-free web dashboard for s7pymon.
+"""A dependency-free web dashboard for busfactor.
 
 This serves a live browser UI for monitoring and writing S7 PLC data using
 only the Python standard library: :class:`http.server.ThreadingHTTPServer`
@@ -119,7 +119,7 @@ class _Poller(threading.Thread):
     """Drives the engine on a fixed interval and broadcasts each snapshot."""
 
     def __init__(self, server: "S7WebServer"):
-        super().__init__(name="s7pymon-poller", daemon=True)
+        super().__init__(name="busfactor-poller", daemon=True)
         self._server = server
         self._stop = threading.Event()
 
@@ -138,7 +138,7 @@ class _Poller(threading.Thread):
 
 
 class _Handler(BaseHTTPRequestHandler):
-    server_version = "s7pymon/web"
+    server_version = "busfactor/web"
 
     # Quieter logging; the default handler logs every request to stderr.
     def log_message(self, format: str, *args) -> None:
@@ -427,7 +427,7 @@ def web_cli(
     log_file: str | None,
     log_format: str | None,
 ) -> None:
-    """s7pymon-web — Live S7 PLC monitor in your browser.
+    """busfactor-web — Live S7 PLC monitor in your browser.
 
     Accepts the same ADDRESS / VARIABLES / connection options as the TUI, then
     serves an ultra-modern dashboard over HTTP with a live Server-Sent Events
@@ -446,7 +446,7 @@ def web_cli(
     except RuntimeConfigError as e:
         click.echo(f"Error: {e}", err=True)
         if "variable specs" in str(e):
-            click.echo("Try: s7pymon-web --help", err=True)
+            click.echo("Try: busfactor-web --help", err=True)
         sys.exit(1)
 
     logger = _build_logger(runtime)
@@ -470,7 +470,7 @@ def web_cli(
 
     server = S7WebServer(engine, host=host, port=http_port)
     server.start()
-    click.echo(f"s7pymon-web serving at {server.url}  (Ctrl-C to stop)")
+    click.echo(f"busfactor-web serving at {server.url}  (Ctrl-C to stop)")
     if open_browser:
         import webbrowser
 

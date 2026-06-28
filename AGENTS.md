@@ -1,4 +1,4 @@
-# s7pymon — Agent instructions
+# busfactor — Agent instructions
 
 ## Commit workflow
 
@@ -38,10 +38,10 @@ No Makefile. Build system is `uv_build`.
 
 | Command | Source |
 |---------|--------|
-| `s7pymon` | `cli.py:cli` |
-| `s7pymon-web` | `web.py:web_cli` |
-| `s7pymon-demo` | `demo.py:demo_web_cli` |
-| `s7pymon-replay` | `replay.py:replay_cli` |
+| `busfactor` | `cli.py:cli` |
+| `busfactor-web` | `web.py:web_cli` |
+| `busfactor-demo` | `demo.py:demo_web_cli` |
+| `busfactor-replay` | `replay.py:replay_cli` |
 
 `resolve_runtime()` in `cli.py` is the shared wiring function — turns `S7MonitorConfig` into a `ResolvedRuntime` (connection, variables, read groups, rules). Used by both TUI and web.
 

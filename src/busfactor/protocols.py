@@ -1,4 +1,4 @@
-"""Protocol connection abstraction for s7pymon.
+"""Protocol connection abstraction for busfactor.
 
 Defines the :class:`Connection` ABC that every protocol driver (S7, EIP, …)
 must implement, along with shared types that are not protocol-specific.

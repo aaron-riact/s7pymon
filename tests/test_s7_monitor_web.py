@@ -8,10 +8,10 @@ import urllib.request
 
 import pytest
 
-from s7pymon.protocols import ConnectionConfig, ConnectionState, DataSource
-from s7pymon.engine import MonitorEngine, ReadGroup, WriteMode
-from s7pymon.variable import S7Area, S7Variable
-from s7pymon.web import Broadcaster, S7WebServer
+from busfactor.protocols import ConnectionConfig, ConnectionState, DataSource
+from busfactor.engine import MonitorEngine, ReadGroup, WriteMode
+from busfactor.variable import S7Area, S7Variable
+from busfactor.web import Broadcaster, S7WebServer
 from tests.fakes import BaseFakeConnection
 
 

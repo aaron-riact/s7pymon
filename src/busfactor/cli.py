@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
-"""CLI entry point for s7pymon — S7 PLC Monitor TUI.
+"""CLI entry point for busfactor — S7 PLC Monitor TUI.
 
 Usage:
-    s7pymon <ip> [variables...] [OPTIONS]
+    busfactor <ip> [variables...] [OPTIONS]
 
 Examples:
     # Monitor specific DB variables
-    s7pymon 192.168.1.100 DB210.Byte0 DB210.Byte1 DB210.Int4
+    busfactor 192.168.1.100 DB210.Byte0 DB210.Byte1 DB210.Int4
 
     # Monitor a raw DB range
-    s7pymon 192.168.1.100 --db 210 --start 0 --size 18
+    busfactor 192.168.1.100 --db 210 --start 0 --size 18
 
     # With named variables
-    s7pymon 192.168.1.100 DB210.Byte0:heartbeat DB210.Byte1:status DB210.Bit1.0:e_stop
+    busfactor 192.168.1.100 DB210.Byte0:heartbeat DB210.Byte1:status DB210.Bit1.0:e_stop
 
     # Monitor DB and process inputs simultaneously
-    s7pymon 192.168.1.100 DB210.Byte0 EB.Byte0 EB.Byte1
+    busfactor 192.168.1.100 DB210.Byte0 EB.Byte0 EB.Byte1
 
     # Monitor process outputs and merkers
-    s7pymon 192.168.1.100 AB.Byte0:output0 MB.Byte0:flag0
+    busfactor 192.168.1.100 AB.Byte0:output0 MB.Byte0:flag0
 
     # Custom connection settings
-    s7pymon 192.168.1.100 --rack 0 --slot 2 --port 1102 DB210.Byte0
+    busfactor 192.168.1.100 --rack 0 --slot 2 --port 1102 DB210.Byte0
 
     # Fast polling
-    s7pymon 192.168.1.100 --interval 0.25 DB210.Byte0 DB210.Byte1
+    busfactor 192.168.1.100 --interval 0.25 DB210.Byte0 DB210.Byte1
 """
 
 import logging
@@ -381,7 +381,7 @@ def main(
     log_format: str | None,
     verbose: bool = False,
 ) -> None:
-    """s7pymon — Live S7 PLC data monitor.
+    """busfactor — Live S7 PLC data monitor.
 
     ADDRESS is the IP address of the S7 PLC.
 
@@ -437,7 +437,7 @@ def main(
     except RuntimeConfigError as e:
         click.echo(f"Error: {e}", err=True)
         if "variable specs" in str(e):
-            click.echo("Try: s7pymon --help", err=True)
+            click.echo("Try: busfactor --help", err=True)
         sys.exit(1)
 
     app = S7MonitorApp(

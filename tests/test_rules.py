@@ -4,15 +4,15 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from s7pymon.protocols import DataSource
-from s7pymon.rules import (
+from busfactor.protocols import DataSource
+from busfactor.rules import (
     FollowRule,
     OutputRule,
     PulseRule,
     RulesEngine,
     ToggleRule,
 )
-from s7pymon.variable import S7Variable
+from busfactor.variable import S7Variable
 from tests.fakes import BaseFakeConnection
 
 

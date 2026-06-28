@@ -6,7 +6,7 @@ Implemented (June 2026) — see §8 for reality vs. plan.
 
 ## Summary
 
-Add Ethernet/IP passive (scanner) mode to s7pymon, enabling it to act as an
+Add Ethernet/IP passive (scanner) mode to busfactor, enabling it to act as an
 EtherNet/IP scanner that connects to an adapter (PLC, drive, I/O block), reads
 its input assemblies, and writes its output assemblies.  Along the way we
 introduce an **output-rules** engine that automates common patterns (follow,
@@ -282,11 +282,11 @@ output_rules:
 
 ```bash
 # Explicit protocol flag
-s7pymon --protocol eip --input-assembly 101 --output-assembly 100 \
+busfactor --protocol eip --input-assembly 101 --output-assembly 100 \
   --rpi 50 192.168.1.100 EIP.Input.Byte0 EIP.Output.Int4
 
 # Default is still S7 for backward compat
-s7pymon 192.168.1.100 DB210.Byte0
+busfactor 192.168.1.100 DB210.Byte0
 ```
 
 ### Proposed CLI flags (documented, future)

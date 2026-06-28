@@ -5,9 +5,9 @@ import urllib.request
 
 from click.testing import CliRunner
 
-from s7pymon.demo import DEMO_DB, build_demo_engine, demo_web_cli
-from s7pymon.protocols import DataSource
-from s7pymon.web import S7WebServer
+from busfactor.demo import DEMO_DB, build_demo_engine, demo_web_cli
+from busfactor.protocols import DataSource
+from busfactor.web import S7WebServer
 
 
 class TestBuildDemoEngine:
@@ -65,6 +65,6 @@ class TestDemoCli:
         runner = CliRunner()
         result = runner.invoke(demo_web_cli, ["--help"])
         assert result.exit_code == 0
-        assert "s7pymon-demo" in result.output
+        assert "busfactor-demo" in result.output
         assert "--open" in result.output
         assert "--seed" in result.output

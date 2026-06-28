@@ -2,8 +2,8 @@
 
 from collections.abc import Hashable
 
-from s7pymon.protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
-from s7pymon.variable import S7Area
+from busfactor.protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
+from busfactor.variable import S7Area
 
 
 class BaseFakeConnection(Connection):

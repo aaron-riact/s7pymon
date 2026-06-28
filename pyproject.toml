@@ -1,5 +1,5 @@
 [project]
-name = "s7pymon"
+name = "busfactor"
 version = "0.1.0"
 description = "S7 PLC monitor and log replay TUI"
 readme = "README.md"
@@ -16,10 +16,10 @@ dependencies = [
 ]
 
 [project.scripts]
-s7pymon = "s7pymon.cli:cli"
-s7pymon-replay = "s7pymon.replay:replay_cli"
-s7pymon-web = "s7pymon.web:web_cli"
-s7pymon-demo = "s7pymon.demo:demo_web_cli"
+busfactor = "busfactor.cli:cli"
+busfactor-replay = "busfactor.replay:replay_cli"
+busfactor-web = "busfactor.web:web_cli"
+busfactor-demo = "busfactor.demo:demo_web_cli"
 
 [build-system]
 requires = ["uv_build>=0.10.8,<0.11.0"]

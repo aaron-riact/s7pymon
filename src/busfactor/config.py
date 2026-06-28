@@ -1,4 +1,4 @@
-"""YAML config file support for s7pymon.
+"""YAML config file support for busfactor.
 
 Config files allow storing connection settings and variable definitions
 so long command lines don't need to be repeated.
@@ -57,7 +57,7 @@ import yaml
 
 @dataclass
 class S7MonitorConfig:
-    """Parsed configuration for s7pymon."""
+    """Parsed configuration for busfactor."""
 
     address: str | None = None
     protocol: str | None = None

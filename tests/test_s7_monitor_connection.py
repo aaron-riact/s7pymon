@@ -1,14 +1,14 @@
 from unittest.mock import MagicMock
 import pytest
 
-from s7pymon.connection import (
+from busfactor.connection import (
     ConnectionConfig,
     ConnectionState,
     ReadResult,
     S7Connection,
 )
-from s7pymon.protocols import DataSource
-from s7pymon.variable import S7Area
+from busfactor.protocols import DataSource
+from busfactor.variable import S7Area
 
 
 @pytest.fixture

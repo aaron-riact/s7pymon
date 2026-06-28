@@ -1,6 +1,0 @@
-# s7pymon session log
-# started: 2026-06-23T17:01:08.728108+00:00
-# address: 127.0.0.1:44818 in=101 out=100 rpi=100ms
-# poll_interval: 0.1
-# variables: EIP.Input.Byte0, EIP.Input.Int4, EIP.Output.DWord8
-timestamp,variable,type,area,offset,old_value,new_value,raw_hex

@@ -1,7 +1,7 @@
 import struct
 import pytest
 
-from s7pymon.variable import (
+from busfactor.variable import (
     ByteOrder,
     S7Area,
     DataType,

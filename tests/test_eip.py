@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from s7pymon.protocols import ConnectionConfig, ConnectionState, DataSource, ReadResult
+from busfactor.protocols import ConnectionConfig, ConnectionState, DataSource, ReadResult
 
 
 @contextmanager
@@ -62,7 +62,7 @@ def mock_eip():
 
 def make_connection(config):
     """Create a bare EIPConnection."""
-    from s7pymon.eip import EIPConnection
+    from busfactor.eip import EIPConnection
 
     return EIPConnection(config)
 
@@ -117,7 +117,7 @@ class TestEIPConnectionLifecycle:
         assert "no device" in conn.error
 
     def test_connect_missing_library(self, config):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         conn = EIPConnection(config)
         saved = sys.modules.get("ethernetip")
@@ -241,28 +241,28 @@ class TestEIPConnectionWrite:
 
 class TestBitConversion:
     def test_bits_to_bytes_all_zeros(self):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         bits = [False] * 16
         result = EIPConnection._bits_to_bytes(bits, 0, 2)
         assert result == bytearray(b"\x00\x00")
 
     def test_bits_to_bytes_all_ones(self):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         bits = [True] * 16
         result = EIPConnection._bits_to_bytes(bits, 0, 2)
         assert result == bytearray(b"\xFF\xFF")
 
     def test_bits_to_bytes_with_offset(self):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         bits = [True] * 8 + [False] * 8 + [True] * 8
         result = EIPConnection._bits_to_bytes(bits, 1, 2)
         assert result == bytearray(b"\x00\xFF")
 
     def test_bytes_to_bits(self):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         bits = [False] * 24
         EIPConnection._write_bytes_to_bits(bits, 0, bytearray(b"\x0F\xF0"))
@@ -274,7 +274,7 @@ class TestBitConversion:
         assert bits[12] is True
 
     def test_bytes_to_bits_with_offset(self):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         bits = [False] * 24
         EIPConnection._write_bytes_to_bits(bits, 1, bytearray(b"\xFF"))
@@ -282,7 +282,7 @@ class TestBitConversion:
         assert bits[8:16] == [True] * 8
 
     def test_round_trip(self):
-        from s7pymon.eip import EIPConnection
+        from busfactor.eip import EIPConnection
 
         original = bytearray(b"\xAB\xCD\xEF")
         bits = [False] * 32
@@ -321,7 +321,7 @@ class TestBuildEIPReadGroups:
 
     @staticmethod
     def groups(**sizes):
-        from s7pymon.eip import build_eip_read_groups
+        from busfactor.eip import build_eip_read_groups
         return build_eip_read_groups(ConnectionConfig(protocol="eip", **sizes))
 
     def test_creates_input_and_output_groups(self):

@@ -1,10 +1,10 @@
-"""Data change logging for s7pymon.
+"""Data change logging for busfactor.
 
 Records timestamped variable value changes to a log file for later
 analysis. Supports CSV and JSONL output formats.
 
 CSV format:
-    # s7pymon session log
+    # busfactor session log
     # started: 2024-03-15T10:30:00
     # address: 192.168.1.100:102
     # variables: DB210.Byte0:heartbeat, DB210.Byte1:status
@@ -107,7 +107,7 @@ class DataLogger:
 
         if self._format == LogFormat.CSV:
             # Write comment header lines
-            self._file.write(f"# s7pymon session log\n")
+            self._file.write(f"# busfactor session log\n")
             self._file.write(f"# started: {self._metadata.started}\n")
             self._file.write(f"# address: {self._metadata.address}\n")
             self._file.write(f"# poll_interval: {self._metadata.poll_interval}\n")

@@ -2,7 +2,7 @@ import json
 import pytest
 from pathlib import Path
 
-from s7pymon.logging import (
+from busfactor.logging import (
     CSV_FIELDS,
     DataLogger,
     LogEntry,
@@ -62,7 +62,7 @@ class TestDataLoggerCSV:
             assert logger.entry_count == 1
 
         content = log_path.read_text()
-        assert "# s7pymon session log" in content
+        assert "# busfactor session log" in content
         assert "# started: 2024-03-15T10:30:00" in content
         assert "timestamp,variable,type,area,offset,old_value,new_value,raw_hex" in content
         assert "heartbeat" in content

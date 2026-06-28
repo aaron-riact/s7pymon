@@ -6,10 +6,10 @@ import pytest
 from rich.text import Text
 from textual.widgets import DataTable
 
-from s7pymon.app import HexDumpDisplay, S7MonitorApp, format_hex_dump
-from s7pymon.engine import ReadGroup, WriteMode
-from s7pymon.protocols import DataSource
-from s7pymon.variable import S7Area, DataType, S7Variable
+from busfactor.app import HexDumpDisplay, S7MonitorApp, format_hex_dump
+from busfactor.engine import ReadGroup, WriteMode
+from busfactor.protocols import DataSource
+from busfactor.variable import S7Area, DataType, S7Variable
 from tests.fakes import BaseFakeConnection
 
 
@@ -478,7 +478,7 @@ class TestRowKeyLookup:
                 assert isinstance(cell, Text)
 
                 # Calls 3..N: unchanged value — flash persists for FLASH_DURATION cycles
-                from s7pymon.app import HexDumpDisplay
+                from busfactor.app import HexDumpDisplay
                 for _ in range(HexDumpDisplay.FLASH_DURATION):
                     app._on_data_received({"DB1": (bytearray([0x00, 0x02]), 0)}, {"DB1": set()})
                     await pilot.pause()

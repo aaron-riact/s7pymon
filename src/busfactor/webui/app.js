@@ -1,4 +1,4 @@
-// s7pymon web dashboard — front-end controller.
+// busfactor web dashboard — front-end controller.
 //
 // Modern web-platform features in play:
 //  • Custom elements (<s7-status>, <s7-card>) for self-updating UI pieces

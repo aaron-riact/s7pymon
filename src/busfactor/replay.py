@@ -1,10 +1,10 @@
-"""Log viewer for replaying s7pymon session logs.
+"""Log viewer for replaying busfactor session logs.
 
 Displays a previously recorded session log file in a Textual TUI,
 showing session metadata and a scrollable table of all value changes.
 
 Usage:
-    s7pymon-replay <log_file>
+    busfactor-replay <log_file>
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ class SessionInfoDisplay(Static):
 
 
 class LogReplayApp(App):
-    """TUI for viewing s7pymon session logs."""
+    """TUI for viewing busfactor session logs."""
 
     TITLE = "S7 Monitor — Log Replay"
 
@@ -137,9 +137,9 @@ class LogReplayApp(App):
 @click.command()
 @click.argument("log_file", type=click.Path(exists=True))
 def replay_main(log_file: str) -> None:
-    """Replay a s7pymon session log.
+    """Replay a busfactor session log.
 
-    LOG_FILE is a CSV or JSONL file written by s7pymon --log-file.
+    LOG_FILE is a CSV or JSONL file written by busfactor --log-file.
     """
     try:
         metadata, entries = load_log_file(log_file)
