@@ -9,17 +9,22 @@ A Textual-based TUI application inspired by Sharp7.Monitor that provides:
 
 from __future__ import annotations
 
+import io
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Union
+from typing import Iterable, Union
 
+from rich.console import Console
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual import work
-from textual.strip import Strip
-from textual.app import App, ComposeResult
+from textual._files import generate_datetime_filename
+from textual.screen import Screen
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
+from textual.strip import Strip
 from textual.containers import Horizontal, Vertical
 from textual.geometry import Region, Size
 from textual.reactive import reactive
@@ -678,6 +683,14 @@ class S7MonitorApp(App):
         Binding("h", "toggle_hex", "Hex Dump"),
         Binding("i", "toggle_hex_interesting", "Interesting"),
     ]
+
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        yield from super().get_system_commands(screen)
+        yield SystemCommand(
+            "Save ASCII dump",
+            "Save current screen as plain text (.txt)",
+            self.action_save_ascii,
+        )
 
     paused: reactive[bool] = reactive(False)
     write_mode: reactive[WriteMode] = reactive(WriteMode.DISABLED)
@@ -1343,6 +1356,30 @@ class S7MonitorApp(App):
         self._connection.disconnect()
         self._update_connection_state()
         self._connect_and_poll()
+
+    def action_save_ascii(self) -> None:
+        """Save current screen as plain text."""
+        width, height = self.size
+        console = Console(
+            width=width,
+            height=height,
+            file=io.StringIO(),
+            force_terminal=True,
+            color_system="truecolor",
+            record=True,
+            legacy_windows=False,
+            safe_box=False,
+        )
+        screen_render = self.screen._compositor.render_update(
+            full=True, screen_stack=self._background_screens, simplify=True
+        )
+        console.print(screen_render)
+        text = console.export_text(styles=False)
+        filename = generate_datetime_filename("s7pymon", ".txt")
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(text)
+        log = self.query_one("#log-panel", RichLog)
+        log.write(f"[dim]Screen saved to {filename}[/dim]")
 
     def on_unmount(self) -> None:
         """Clean up resources when the app exits."""
