@@ -1,6 +1,6 @@
 """A dependency-free web dashboard for busfactor.
 
-This serves a live browser UI for monitoring and writing S7 PLC data using
+This serves a live browser UI for monitoring and writing industrial controller data using
 only the Python standard library: :class:`http.server.ThreadingHTTPServer`
 for HTTP, **Server-Sent Events** (``text/event-stream``) for the live telemetry
 feed, and JSON ``POST`` endpoints for control/writes. No web framework is
@@ -427,7 +427,7 @@ def web_cli(
     log_file: str | None,
     log_format: str | None,
 ) -> None:
-    """busfactor-web — Live S7 PLC monitor in your browser.
+    """busfactor-web — Live industrial protocol monitor in your browser.
 
     Accepts the same ADDRESS / VARIABLES / connection options as the TUI, then
     serves an ultra-modern dashboard over HTTP with a live Server-Sent Events

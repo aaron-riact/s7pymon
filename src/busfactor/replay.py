@@ -43,7 +43,7 @@ class SessionInfoDisplay(Static):
 class LogReplayApp(App):
     """TUI for viewing busfactor session logs."""
 
-    TITLE = "S7 Monitor — Log Replay"
+    TITLE = "busfactor — Log Replay"
 
     CSS = """
     Screen {

@@ -1,7 +1,7 @@
-"""S7 Monitor — Modern terminal UI for monitoring and writing S7 PLC data blocks.
+"""busfactor — Modern terminal UI for monitoring and writing industrial controller data.
 
-A Textual-based TUI application inspired by Sharp7.Monitor that provides:
-- Live hex dump of DB contents with auto-refresh
+A Textual-based TUI application that provides:
+- Live hex dump with auto-refresh
 - Parsed variable table with change highlighting
 - Inline editing of variable values with write confirmation
 - Command bar for raw byte writes with confirmation
@@ -623,9 +623,9 @@ class ConfirmWriteScreen(ModalScreen[bool]):
 
 
 class S7MonitorApp(App):
-    """S7 PLC Data Block Monitor."""
+    """Live industrial protocol monitor."""
 
-    TITLE = "S7 Monitor"
+    TITLE = "busfactor"
     HORIZONTAL_BREAKPOINTS = [(120, "two-column")]
 
     CSS = """
@@ -809,7 +809,7 @@ class S7MonitorApp(App):
         conn_status.write_mode = self.write_mode
 
         log = self.query_one("#log-panel", RichLog)
-        log.write("[bold]S7 Monitor[/bold] ready. Connecting…")
+        log.write("[bold]busfactor[/bold] ready. Connecting…")
         if self._rules_engine is not None:
             log.write(f"[dim]Rules engine loaded: {len(self._rules_engine.rules)} rule(s)[/dim]")
         else:

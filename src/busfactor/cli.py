@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI entry point for busfactor — S7 PLC Monitor TUI.
+"""CLI entry point for busfactor — live industrial protocol monitor.
 
 Usage:
     busfactor <ip> [variables...] [OPTIONS]
@@ -381,9 +381,9 @@ def main(
     log_format: str | None,
     verbose: bool = False,
 ) -> None:
-    """busfactor — Live S7 PLC data monitor.
+    """busfactor — Live industrial protocol monitor.
 
-    ADDRESS is the IP address of the S7 PLC.
+    ADDRESS is the IP address of the PLC (S7 or EIP).
 
     VARIABLES are variable specs. Append :label to name them.
 

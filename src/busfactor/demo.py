@@ -1,9 +1,9 @@
 """Built-in browser demo for busfactor.
 
 This module exposes a first-class ``busfactor-demo`` command that starts the same
-web dashboard used for real PLCs, but backed by a synthetic DB buffer with
-plausible changing values. That makes it easy to demo the UI without a Siemens
-controller on hand.
+web dashboard used for real PLCs, but backed by a synthetic buffer with
+plausible changing values. That makes it easy to demo the UI without
+a physical controller on hand.
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Config files allow storing connection settings and variable definitions
 so long command lines don't need to be repeated.
 
-Example S7 config file (monitor.yaml):
+Example config file (monitor.yaml):
 
     address: 192.168.1.100
     rack: 0
