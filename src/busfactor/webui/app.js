@@ -113,6 +113,7 @@ const els = {
   hexLabel: $("#hex-label"),
   log: $("#log"),
   polls: $("#metric-polls b"),
+  extra: $("#metric-extra"),
   vars: $("#metric-vars b"),
   interval: $("#metric-interval b"),
   pause: $("#btn-pause"),
@@ -193,6 +194,11 @@ function applySnapshot(s) {
   setPaused(s.paused);
   if (s.write_mode && s.write_mode !== writeMode) setWriteMode(s.write_mode);
   els.polls.textContent = s.poll_count;
+
+  if (s.status_extra) {
+    const parts = Object.entries(s.status_extra).map(([k, v]) => `${k}: ${v}`);
+    els.extra.textContent = parts.join("  ");
+  }
 
   if (s.error) log(s.error, "err");
 

@@ -144,6 +144,7 @@ class Snapshot:
     paused: bool
     write_mode: str
     error: str | None
+    status_extra: dict[str, str] = field(default_factory=dict)
     readings: list[VariableReading] = field(default_factory=list)
     groups: list[GroupDump] = field(default_factory=list)
 
@@ -155,6 +156,7 @@ class Snapshot:
             "paused": self.paused,
             "write_mode": self.write_mode,
             "error": self.error,
+            "status_extra": self.status_extra,
             "readings": [r.to_dict() for r in self.readings],
             "groups": [g.to_dict() for g in self.groups],
         }
@@ -420,6 +422,7 @@ class MonitorEngine:
             paused=self._paused,
             write_mode=self._write_mode.value,
             error=error,
+            status_extra=self._connection.status_extra,
             readings=readings,
             groups=groups,
         )
