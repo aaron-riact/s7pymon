@@ -63,6 +63,7 @@ class ConnectionStatus(Static):
     state: reactive[ConnectionState] = reactive(ConnectionState.DISCONNECTED)
     config_text: reactive[str] = reactive("")
     poll_count: reactive[int] = reactive(0)
+    status_extra: reactive[dict[str, str]] = reactive({})
     write_mode: reactive[WriteMode] = reactive(WriteMode.DISABLED)
 
     def render(self) -> Text:
@@ -85,6 +86,11 @@ class ConnectionStatus(Static):
             result += Text(f"  │  {self.config_text}", style="dim")
         if self.poll_count > 0:
             result += Text(f"  │  polls: {self.poll_count}", style="dim")
+
+        extra = self.status_extra
+        if extra:
+            parts = "  ".join(f"{k}: {v}" for k, v in extra.items())
+            result += Text(f"  │  {parts}", style="dim")
 
         # Write mode indicator
         wm = self.write_mode
@@ -806,6 +812,7 @@ class S7MonitorApp(App):
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.config_text = self._connection.config.display
         conn_status.state = self._connection.state
+        conn_status.status_extra = self._connection.status_extra
         conn_status.write_mode = self.write_mode
 
         log = self.query_one("#log-panel", RichLog)
@@ -974,6 +981,7 @@ class S7MonitorApp(App):
         # Update connection status
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.poll_count = self._poll_count
+        conn_status.status_extra = self._connection.status_extra
 
         # Advance var flash counters (decrement all, expire at zero).
         # Snapshot before so we can detect newly-expired specs.
@@ -1080,6 +1088,7 @@ class S7MonitorApp(App):
     def _update_connection_state(self) -> None:
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.state = self._connection.state
+        conn_status.status_extra = self._connection.status_extra
 
     def _check_write_allowed(self) -> bool:
         """Check if writes are permitted in the current mode. Logs if blocked."""

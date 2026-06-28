@@ -131,6 +131,11 @@ class Connection(ABC):
     def write_source(self, source: DataSource, offset: int, data: bytearray) -> None:
         ...
 
+    @property
+    def status_extra(self) -> dict[str, str]:
+        """Protocol-specific status info shown in the connection bar."""
+        return {}
+
     def __enter__(self):
         self.connect()
         return self

@@ -124,6 +124,17 @@ class EIPConnection(Connection):
                 self._cleanup()
                 raise
 
+    @property
+    def status_extra(self) -> dict[str, str]:
+        if self._conn is None:
+            return {}
+        extra: dict[str, str] = {}
+        if self.connected:
+            extra["Tx"] = f"{self._conn.seqnum:04X}"
+            extra["Rx"] = f"{self._conn.last_input_seq_num:04X}"
+            extra["State"] = "Run"
+        return extra
+
     def disconnect(self) -> None:
         log.debug("Disconnecting ...")
         with self._lock:
