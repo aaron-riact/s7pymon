@@ -6,10 +6,10 @@ interval: 0.1               # 100 ms for fast I/O
 output_assembly: 100
 #input_assembly: 100
 input_assembly: 101
-#input_size: 110
-input_size: 76
-#output_size: 110
-output_size: 76
+input_size: 110
+#input_size: 76
+output_size: 110
+#output_size: 76
 rpi_ms: 100
 field_vars:
   EIP.Input:
@@ -84,11 +84,11 @@ field_vars:
           - Bit0.2:DI 103 - NC reset
           - Bit0.3:DI 104 - All machining complete
           - Bit0.5:DI 105 - Robot service finished signal
-          - Bit1.1:DI 107 - Machine side door open command
-          - Bit1.2:DI 108 - Machine side door close command
-          - Bit1.3:DI 109 - Robot clear
-          - Bit1.4:DI 110 - Machine front door open command
-          - Bit1.5:DI 111 - Machine front door close command
+          - Bit0.6:DI 107 - Machine side door open command
+          - Bit0.7:DI 108 - Machine side door close command
+          - Bit1.0:DI 109 - Robot clear
+          - Bit1.1:DI 110 - Machine front door open command
+          - Bit1.2:DI 111 - Machine front door close command
       - 16408:
           - Chars0.32:DI 100 - Target work number
 
