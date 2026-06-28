@@ -7,9 +7,9 @@ output_assembly: 100
 #input_assembly: 100
 input_assembly: 101
 #input_size: 110
-input_size: 110
+input_size: 76
 #output_size: 110
-output_size: 110
+output_size: 76
 rpi_ms: 100
 field_vars:
   EIP.Input:
@@ -23,19 +23,19 @@ field_vars:
           - Bit0.3:DO 003 - panel retracted
           - Bit0.4:DO 004 - alarm
           - Bit0.6:DO 006 - power off req ack
-          - Bit1.0:DO 008 - fix1 clamp complete
-          - Bit1.1:DO 009 - fix1 unclamp complete
-          - Bit1.2:DO 010 - fix2 clamp complete
-          - Bit1.3:DO 011 - fix2 unclamp complete
-          - Bit1.4:DO 012 - fix3 clamp complete
-          - Bit1.5:DO 013 - fix3 unclamp complete
-          - Bit1.6:DO 014 - fix4 clamp complete
-          - Bit1.7:DO 015 - fix4 unclamp complete
-      - 18179:
-          - Bit0.0:DO 016 - Seat detect complete 1
-          - Bit0.1:DO 017 - Seat detect complete 2
-          - Bit0.2:DO 018 - WP seat detect alarm 1
-          - Bit0.3:DO 019 - WP seat detect alarm 2
+          #- Bit1.0:DO 008 - fix1 clamp complete
+          #- Bit1.1:DO 009 - fix1 unclamp complete
+          #- Bit1.2:DO 010 - fix2 clamp complete
+          #- Bit1.3:DO 011 - fix2 unclamp complete
+          #- Bit1.4:DO 012 - fix3 clamp complete
+          #- Bit1.5:DO 013 - fix3 unclamp complete
+          #- Bit1.6:DO 014 - fix4 clamp complete
+          #- Bit1.7:DO 015 - fix4 unclamp complete
+      #- 18179:
+      #    - Bit0.0:DO 016 - Seat detect complete 1
+      #    - Bit0.1:DO 017 - Seat detect complete 2
+      #    - Bit0.2:DO 018 - WP seat detect alarm 1
+      #    - Bit0.3:DO 019 - WP seat detect alarm 2
       - 18184:
           - Bit0.0:DO 101 - Work number search complete
           - Bit0.1:DO 102 - Cycle start permission signal
@@ -52,7 +52,7 @@ field_vars:
           - Bit1.4:DO 110 - Front door open finished
           - Bit1.5:DO 111 - Front door close finished
       - 18200:
-          - Chars0.32:DO 100 - Program
+          - Chars0.32:DO 100 - Current work number
   EIP.Output:
     base_register: 16386
     register_width_bits: 16
@@ -65,19 +65,19 @@ field_vars:
           - Bit0.4:DI 004 - Robot alarm
           - Bit0.5:DI 005 - Operator interrupt request
           - Bit0.6:DI 006 - Auto power off req
-          - Bit1.0:DI 008 - fix1 clamp command
-          - Bit1.1:DI 009 - fix1 unclamp command
-          - Bit1.2:DI 010 - fix2 clamp command
-          - Bit1.3:DI 011 - fix2 unclamp command
-          - Bit1.4:DI 012 - fix3 clamp command
-          - Bit1.5:DI 013 - fix3 unclamp command
-          - Bit1.6:DI 014 - fix4 clamp command
-          - Bit1.7:DI 015 - fix4 unclamp command
-      - 16387:
-          - Bit0.0:DI 016 - WP seat detect request 1
-          - Bit0.1:DI 017 - WP seat detect request 2
-          - Bit0.2:DI 018 - Ignore WP seat detect alarm 1
-          - Bit0.3:DI 019 - Ignore WP seat detect alarm 2
+          #- Bit1.0:DI 008 - fix1 clamp command
+          #- Bit1.1:DI 009 - fix1 unclamp command
+          #- Bit1.2:DI 010 - fix2 clamp command
+          #- Bit1.3:DI 011 - fix2 unclamp command
+          #- Bit1.4:DI 012 - fix3 clamp command
+          #- Bit1.5:DI 013 - fix3 unclamp command
+          #- Bit1.6:DI 014 - fix4 clamp command
+          #- Bit1.7:DI 015 - fix4 unclamp command
+      #- 16387:
+      #    - Bit0.0:DI 016 - WP seat detect request 1
+      #    - Bit0.1:DI 017 - WP seat detect request 2
+      #    - Bit0.2:DI 018 - Ignore WP seat detect alarm 1
+      #    - Bit0.3:DI 019 - Ignore WP seat detect alarm 2
       - 16392:
           - Bit0.0:DI 101 - Work number search start
           - Bit0.1:DI 102 - Cycle start command
@@ -92,7 +92,7 @@ field_vars:
       - 16408:
           - Chars0.32:DI 100 - Target work number
 
-variables:
+#variables:
 #  #- EIP.Input.ByteI:heartbeat
 #  - EIP.Input.Word0I0:DO 000 - heartbeat
 #  - EIP.Input.Word0I1:DO 001 - machine_ready
@@ -139,12 +139,12 @@ variables:
 #  #- EIP.Output.DWord8:setpoint4
 #  #- EIP.Output.DWord8:setpoint5
 #  #- EIP.Output.DWord8:setpoint6
-  - EIP.Output.Bit0.0:heartbeat
+#  - EIP.Output.Bit0.0:heartbeat
 rules:
   # Copy input byte 0 to output byte 0 every cycle
   #EIP.Output.Bit0.0:
   #  follow: EIP.Input.Bit0.0
   # Toggle bit 0 of output byte 0 every 2 cycles (heartbeat)
   EIP.Output.Bit0.0:
-    toggle: 5
+    toggle: 15
 
