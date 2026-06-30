@@ -2,7 +2,7 @@
 
 Rules run between the read and write phases of each poll cycle:
 
-* **Follow** — copies an input value to an output variable every cycle.
+* **Follow** — copies an input value to an output variable every cycle (supports ``inverted`` for bits).
 * **Toggle** — alternates a bit every N cycles (heartbeat / watchdog).
 * **Pulse** — sets a bit high for N cycles when explicitly triggered.
 
@@ -30,6 +30,7 @@ class OutputRule:
 @dataclass(frozen=True)
 class FollowRule(OutputRule):
     source: str
+    inverted: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,9 @@ class RulesEngine:
             return
         log.debug("follow %s <- %s: value=%s", rule.target, rule.source, formatted)
         parsed = target_var.parse_input(formatted)
+        if rule.inverted:
+            if target_var.type == DataType.BIT:
+                parsed = not parsed
         if target_var.type == DataType.BIT:
             if not isinstance(parsed, bool):
                 return

@@ -131,7 +131,8 @@ def build_rules_engine(rules_cfg: dict[str, dict[str, Any]]) -> RulesEngine | No
     rules: list[OutputRule] = []
     for target, rule_def in rules_cfg.items():
         if "follow" in rule_def:
-            rules.append(FollowRule(target=str(target), source=str(rule_def["follow"])))
+            inverted = bool(rule_def.get("follow_inverted", False))
+            rules.append(FollowRule(target=str(target), source=str(rule_def["follow"]), inverted=inverted))
         elif "toggle" in rule_def:
             period = int(rule_def["toggle"])
             rules.append(ToggleRule(target=str(target), period=period))

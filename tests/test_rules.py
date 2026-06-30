@@ -200,3 +200,39 @@ class TestRulesEngine:
         conn = FakeConnection()
         engine.apply(conn, {"EIP.Input.Byte0": "77"})
         assert conn.writes == [(DataSource.s7_db(200), 0, bytearray(b"\x4D"))]
+
+    def test_follow_inverted_bit_true_to_false(self):
+        """Inverted follow writes the inverse of a True source bit."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Bit0.0", source="EIP.Input.Bit0.3", inverted=True),
+        ])
+        conn = FakeConnection()
+        conn._buffers["EIP.Output"] = bytearray(b"\xFF")  # current byte
+        engine.apply(conn, {"EIP.Input.Bit0.3": "True"})
+        # Source is True, inverted → write False → bit 0 cleared
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\xFE"))]
+
+    def test_follow_inverted_bit_false_to_true(self):
+        """Inverted follow writes the inverse of a False source bit."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Bit0.0", source="EIP.Input.Bit0.3", inverted=True),
+        ])
+        conn = FakeConnection()
+        conn._buffers["EIP.Output"] = bytearray(b"\x00")
+        engine.apply(conn, {"EIP.Input.Bit0.3": "False"})
+        # Source is False, inverted → write True → bit 0 set
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\x01"))]
+
+    def test_follow_non_inverted_bit_still_works(self):
+        """Regular (non-inverted) follow still copies the value as-is."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Bit0.0", source="EIP.Input.Bit0.3", inverted=False),
+        ])
+        conn = FakeConnection()
+        conn._buffers["EIP.Output"] = bytearray(b"\x00")
+        engine.apply(conn, {"EIP.Input.Bit0.3": "True"})
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\x01"))]
+
+    def test_follow_inverted_default_is_false(self):
+        """Default inverted=False matches non-inverted behavior."""
+        assert not FollowRule(target="t", source="s").inverted

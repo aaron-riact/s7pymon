@@ -909,17 +909,14 @@ class S7MonitorApp(App):
 
             self.call_from_thread(self._on_data_received, results, changed_offsets)
 
-            if self._rules_engine is not None:
-                self._apply_rules(results)
+            # Rules run after data is stored so the next worker picks
+            # them up; writes happen in the worker thread via apply() below.
+            # (The actual apply is called from _on_data_received with
+            # populated current_values — see that method.)
         except Exception as e:
             log = self.query_one("#log-panel", RichLog)
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
             self.call_from_thread(self._update_connection_state)
-
-    def _apply_rules(self, buffers: dict[str, tuple[bytearray, int]]) -> None:
-        if self._rules_engine is None:
-            return
-        self._rules_engine.apply(self._connection, {}, buffers)
 
     def trigger_pulse(self, target: str) -> None:
         if self._rules_engine is None:
@@ -1071,6 +1068,11 @@ class S7MonitorApp(App):
                     cell_updates.append((self._tables[side], row_key, self.COL_VALUE, Text(f"ERR: {e}", style="red")))
 
         self._apply_cell_updates(cell_updates)
+
+        # Apply rules with populated current_values so Follow rules
+        # can find their source variable's formatted value.
+        if self._rules_engine is not None:
+            self._rules_engine.apply(self._connection, self._current_values, self._current_data)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         var = self._row_key_to_var.get(event.row_key.value)
