@@ -236,3 +236,70 @@ class TestRulesEngine:
     def test_follow_inverted_default_is_false(self):
         """Default inverted=False matches non-inverted behavior."""
         assert not FollowRule(target="t", source="s").inverted
+
+    def test_follow_delay_0_writes_immediately(self):
+        """delay_ms=0 writes immediately (same as no delay)."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=0),
+        ])
+        conn = FakeConnection()
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\x2A"))]
+
+    def test_follow_delay_scheduled_not_written(self):
+        """delay_ms > 0 schedules but does not write immediately."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=60_000),
+        ])
+        conn = FakeConnection()
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == []
+
+    def test_follow_delay_expired_writes(self):
+        """delay_ms elapses, then next apply() writes."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=10),
+        ])
+        conn = FakeConnection()
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == []  # not yet
+
+        import time
+        time.sleep(0.015)  # well past the 10ms delay
+
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\x2A"))]
+
+    def test_follow_delay_rescheduled_on_change(self):
+        """Source value change before delay expires reschedules."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=10_000),
+        ])
+        conn = FakeConnection()
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == []
+
+        engine.apply(conn, {"EIP.Input.Byte4": "99"})
+        assert conn.writes == []  # still pending with updated value
+
+    def test_follow_delay_bit_write_modifies_correctly(self):
+        """Delayed bit follow modifies only the target bit."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Bit0.0", source="EIP.Input.Bit0.3", delay_ms=10),
+        ])
+        conn = FakeConnection()
+        conn._buffers["EIP.Output"] = bytearray(b"\xFF")
+
+        engine.apply(conn, {"EIP.Input.Bit0.3": "False"})
+        assert conn.writes == []  # not yet
+
+        import time
+        time.sleep(0.015)
+
+        engine.apply(conn, {"EIP.Input.Bit0.3": "False"})
+        # Should have written 0xFE (only bit 0 cleared)
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\xFE"))]
+
+    def test_follow_delay_default_is_0(self):
+        """Default delay_ms=0."""
+        assert FollowRule(target="t", source="s").delay_ms == 0
