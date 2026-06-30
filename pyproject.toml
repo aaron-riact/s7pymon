@@ -12,7 +12,7 @@ dependencies = [
     "python-snap7>=2.0",
     "pyyaml>=6.0",
     "textual>=3.0",
-    "ethernetip @ git+https://codeberg.org/aaron-riact/python-ethernetip",
+    "ethernetip @ git+https://codeberg.org/aaron-riact/python-ethernetip@feat/adapter-mode",
 ]
 
 [project.scripts]
