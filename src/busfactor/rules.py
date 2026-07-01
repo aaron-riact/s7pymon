@@ -144,7 +144,10 @@ class RulesEngine:
         if encoded is None:
             return
         if rule.delay_ms > 0:
-            state.pending = _PendingWrite(time.monotonic() + rule.delay_ms / 1000, encoded)
+            # Re-arm only when the value changed, or an unchanged input would
+            # push the write back forever.
+            if state.pending is None or state.pending.encoded != encoded:
+                state.pending = _PendingWrite(time.monotonic() + rule.delay_ms / 1000, encoded)
         else:
             connection.write_source(target_var.source, target_var.offset, encoded)
 

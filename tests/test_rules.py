@@ -256,24 +256,32 @@ class TestRulesEngine:
         assert conn.writes == []
 
     def test_follow_delay_expired_writes(self):
-        """delay_ms elapses, then next apply() writes."""
+        """delay_ms elapses, then next apply() writes.
+
+        Checks the real bug scenario: repeated apply() calls with the
+        same value must NOT reset the timer every cycle (the bug was
+        that _apply_follow unconditionally rescheduled on every call).
+        """
         engine = RulesEngine([
             FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=10),
         ])
         conn = FakeConnection()
-        engine.apply(conn, {"EIP.Input.Byte4": "42"})
-        assert conn.writes == []  # not yet
+
+        # Simulate several poll cycles with the same value
+        for _ in range(5):
+            engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == []  # still not written
 
         import time
-        time.sleep(0.015)  # well past the 10ms delay
+        time.sleep(0.015)  # past the 10ms delay
 
         engine.apply(conn, {"EIP.Input.Byte4": "42"})
         assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\x2A"))]
 
     def test_follow_delay_rescheduled_on_change(self):
-        """Source value change before delay expires reschedules."""
+        """Source value change before delay expires reschedules (timer resets)."""
         engine = RulesEngine([
-            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=10_000),
+            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=10),
         ])
         conn = FakeConnection()
         engine.apply(conn, {"EIP.Input.Byte4": "42"})
@@ -281,6 +289,36 @@ class TestRulesEngine:
 
         engine.apply(conn, {"EIP.Input.Byte4": "99"})
         assert conn.writes == []  # still pending with updated value
+
+        # Value changed, so timer was reset — the 10ms delay starts over
+        # from the last apply().  Wait and verify the NEW value is written.
+        import time
+        time.sleep(0.015)
+
+        engine.apply(conn, {"EIP.Input.Byte4": "99"})
+        assert conn.writes == [(DataSource.eip("Output"), 0, bytearray(b"\x63"))]  # 0x63 = 99
+
+    def test_follow_delay_not_rescheduled_on_same_value(self):
+        """Unchanged source value does not reset the timer."""
+        engine = RulesEngine([
+            FollowRule(target="EIP.Output.Byte0", source="EIP.Input.Byte4", delay_ms=10),
+        ])
+        conn = FakeConnection()
+
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+        assert conn.writes == []
+
+        # Snapshot the due time after the first apply
+        pending = engine._states[0].pending
+        assert pending is not None
+        ts_after_first = pending.due_at
+
+        # Same value again — should NOT reset the timer
+        engine.apply(conn, {"EIP.Input.Byte4": "42"})
+
+        pending = engine._states[0].pending
+        assert pending is not None
+        assert pending.due_at == ts_after_first, "Timer reset on unchanged value — write never fires"
 
     def test_follow_delay_bit_write_modifies_correctly(self):
         """Delayed bit follow modifies only the target bit."""
