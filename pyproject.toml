@@ -6,13 +6,13 @@ readme = "README.md"
 authors = [
     { name = "Aaron", email = "akl@riact.eu" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
     "python-snap7>=2.0",
     "pyyaml>=6.0",
     "textual>=3.0",
-    "ethernetip @ git+https://codeberg.org/aaron-riact/python-ethernetip@feat/adapter-mode",
+    "ethernetip2",
 ]
 
 [project.scripts]
@@ -38,7 +38,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.uv.sources]
-ethernetip = { path = "../ethernetip-stuff/python-ethernetip", editable = true }
+ethernetip2 = { path = "../ethernetip-stuff/python-ethernetip", editable = true }
 
 [tool.ty]
 environment.root = ["."]
