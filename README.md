@@ -1,5 +1,8 @@
 # busfactor — Live industrial protocol monitor (S7 + EtherNet/IP)
 
+![Busfactor terminal](busfactor.png)
+
+
 A modern terminal UI and web dashboard for live-monitoring and writing
 industrial controller data. Supports **Siemens S7** (via python-snap7) and
 **EtherNet/IP** (via python-ethernetip) protocols.
