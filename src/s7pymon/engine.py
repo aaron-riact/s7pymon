@@ -14,6 +14,7 @@ two frontends share a single source of truth.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -25,6 +26,8 @@ from .rules import RulesEngine
 from .variable import S7Area, DataType, S7Variable, extract_value
 
 Value = Union[int, float, bool, str]
+
+log = logging.getLogger(__name__)
 
 
 class WriteMode(Enum):
@@ -332,7 +335,7 @@ class MonitorEngine:
             try:
                 self._rules_engine.apply(self._connection, self._current_values)
             except Exception:
-                pass
+                log.exception("Output rules failed")
 
         self._poll_count += 1
         return self._snapshot(error=None, groups=groups, readings=readings)
