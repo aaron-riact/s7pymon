@@ -1,9 +1,13 @@
 """Register-map field variable expansion.
 
 Takes a ``field_vars`` config section that describes how to dissect a
-contiguous block of registers (e.g. an EIP assembly) and expands each
-register-local spec string into a flat ``EIPVariable`` with an absolute
-assembly offset.
+contiguous block of registers (an EIP assembly, a Modbus table) and expands
+each register-local spec string into a flat variable with an absolute byte
+offset.
+
+This is how a profile names registers the way a device manual does. For
+Modbus that matters twice over: specs carry byte offsets, so without this a
+reader has to double every register number by hand.
 
 Example field_vars config::
 
@@ -17,19 +21,29 @@ Example field_vars config::
               - Bit0.1:machine_ready
           - 18200:
               - Chars0.32:program
+
+      MB.Holding:
+        base_register: 0
+        register_width_bits: 16
+        fields:
+          - 268:
+              - Bit0.6:safety error
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from .variable import EIPVariable, Variable
+from .variable import EIPVariable, ModbusVariable, Variable
 
 
-def expand_field_vars(field_vars_cfg: dict[str, Any]) -> list[EIPVariable]:
-    """Expand a ``field_vars`` config into a flat list of :class:`EIPVariable`.
+def expand_field_vars(
+    field_vars_cfg: dict[str, Any],
+) -> list[EIPVariable | ModbusVariable]:
+    """Expand a ``field_vars`` config into a flat list of variables.
 
-    Each assembly key (e.g. ``"EIP.Input"``) gets a ``base_register``,
+    Each source key (``"EIP.Input"``, ``"MB.Holding"``) gets a ``base_register``,
     ``register_width_bits``, and a list of ``fields``.  Every field entry is
     a single-key dict ``{register_number: [spec_string, ...]}``.
 
@@ -44,7 +58,7 @@ def expand_field_vars(field_vars_cfg: dict[str, Any]) -> list[EIPVariable]:
 
     Returns expanded variables in input order.
     """
-    result: list[EIPVariable] = []
+    result: list[EIPVariable | ModbusVariable] = []
 
     for assembly_key, assembly_cfg in field_vars_cfg.items():
         if not isinstance(assembly_cfg, dict):
@@ -129,22 +143,14 @@ def expand_field_vars(field_vars_cfg: dict[str, Any]) -> list[EIPVariable]:
                         f"at register {register_number}: {e}"
                     ) from e
 
-                if not isinstance(parsed, EIPVariable):
+                if not isinstance(parsed, (EIPVariable, ModbusVariable)):
                     raise ValueError(
-                        f"Expected EIPVariable from spec {full_spec!r}, "
-                        f"got {type(parsed).__name__}"
+                        f"field_vars only expands EIP and Modbus specs; "
+                        f"{full_spec!r} parsed as {type(parsed).__name__}"
                     )
 
-                new_offset = parsed.offset + register_base_offset
-
-                expanded = EIPVariable(
-                    assembly=parsed.assembly,
-                    type=parsed.type,
-                    offset=new_offset,
-                    extra=parsed.extra,
-                    label=parsed.label,
-                    byte_order=parsed.byte_order,
+                result.append(
+                    replace(parsed, offset=parsed.offset + register_base_offset)
                 )
-                result.append(expanded)
 
     return result

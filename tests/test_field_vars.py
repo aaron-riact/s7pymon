@@ -3,7 +3,7 @@
 import pytest
 
 from busfactor.field_vars import expand_field_vars
-from busfactor.variable import DataType, EIPVariable
+from busfactor.variable import DataType, EIPVariable, ModbusVariable
 
 
 class TestExpandFieldVars:
@@ -133,6 +133,7 @@ class TestExpandFieldVars:
         }
         result = expand_field_vars(cfg)
         assert len(result) == 1
+        assert isinstance(result[0], EIPVariable)
         assert result[0].assembly == "Output"
         assert result[0].offset == 0
 
@@ -152,6 +153,8 @@ class TestExpandFieldVars:
         }
         result = expand_field_vars(cfg)
         assert len(result) == 2
+        assert isinstance(result[0], EIPVariable)
+        assert isinstance(result[1], EIPVariable)
         assert result[0].assembly == "Input"
         assert result[1].assembly == "Output"
 
@@ -308,3 +311,63 @@ class TestExpandFieldVarsIntegration:
         rt = resolve_runtime(cfg)
         assert len(rt.variables) == 1
         assert rt.variables[0].label == "field_byte"
+
+
+class TestModbusFieldVars:
+    def test_register_number_becomes_a_byte_offset(self):
+        expanded = expand_field_vars({
+            "MB.Holding": {
+                "base_register": 0,
+                "register_width_bits": 16,
+                "fields": [{268: ["Word0:status"]}],
+            }
+        })
+        assert len(expanded) == 1
+        assert isinstance(expanded[0], ModbusVariable)
+        assert expanded[0].offset == 536
+        assert expanded[0].register == 268
+        assert expanded[0].label == "status"
+
+    def test_bits_keep_their_bit_number(self):
+        expanded = expand_field_vars({
+            "MB.Holding": {
+                "base_register": 0,
+                "register_width_bits": 16,
+                "fields": [{268: ["Bit0.0:busy", "Bit0.6:safety error"]}],
+            }
+        })
+        assert [(v.offset, v.extra, v.label) for v in expanded] == [
+            (536, 0, "busy"),
+            (536, 6, "safety error"),
+        ]
+
+    def test_base_register_shifts_the_origin(self):
+        expanded = expand_field_vars({
+            "MB.Holding": {
+                "base_register": 256,
+                "register_width_bits": 16,
+                "fields": [{268: ["Word0:status"]}],
+            }
+        })
+        assert expanded[0].offset == 24
+
+    def test_table_is_carried_through(self):
+        expanded = expand_field_vars({
+            "MB.Coil": {
+                "base_register": 0,
+                "register_width_bits": 16,
+                "fields": [{0: ["Bit0.0:relay"]}],
+            }
+        })
+        assert isinstance(expanded[0], ModbusVariable)
+        assert expanded[0].table == "Coil"
+
+    def test_s7_specs_are_rejected(self):
+        with pytest.raises(ValueError, match="only expands EIP and Modbus"):
+            expand_field_vars({
+                "DB210": {
+                    "base_register": 0,
+                    "register_width_bits": 16,
+                    "fields": [{0: ["Byte0:x"]}],
+                }
+            })
