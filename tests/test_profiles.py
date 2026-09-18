@@ -45,12 +45,20 @@ class TestOnRobotStatusProfile:
     def test_is_read_only(self):
         assert load("onrobot-rg-status.yaml").write_mode == WriteMode.DISABLED
 
-    def test_read_window_stays_inside_the_implemented_registers(self):
+    def test_read_window_is_two_registers(self):
         group = load("onrobot-rg-status.yaml").read_groups[0]
         assert str(group.source) == "MB.Holding"
-        # Registers 267..275, as bytes.
+        # Registers 267..268, as bytes. Short reads survive a lossy gateway.
         assert group.start == 534
-        assert group.size == 18
+        assert group.size == 4
+
+    def test_every_byte_read_is_decoded_by_a_variable(self):
+        runtime = load("onrobot-rg-status.yaml")
+        group = runtime.read_groups[0]
+        covered = set()
+        for var in runtime.variables:
+            covered.update(range(var.offset, var.offset + var.byte_size))
+        assert covered == set(range(group.start, group.start + group.size))
 
     def test_status_bits_are_named(self):
         labels = {v.label for v in load("onrobot-rg-status.yaml").variables}

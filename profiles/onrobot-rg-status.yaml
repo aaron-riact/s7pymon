@@ -13,8 +13,10 @@
 # Register numbers are OnRobot's own. busfactor doubles them into byte
 # offsets, so register 268 is read at byte 536.
 #
-# The read window stays inside 267..275. Registers 3..257 are not implemented
-# and asking for them fails the whole read.
+# The read window is registers 267..268 only. Registers 3..257 are not
+# implemented and asking for them fails the whole read, and this gateway
+# drops long replies: sampled on a Dobot flange, a 2-register read answered
+# every time while a 9-register read answered once in five.
 
 protocol: modbus
 address: 192.168.0.119
@@ -41,13 +43,20 @@ field_vars:
           - Word0.4:S2 pushed
           - Word0.5:S2 trigged - will not move
           - Word0.6:safety error - a switch was pushed at power on
-      - 275:
-          - Word0:width with offset 0.1mm
-
-# Depth readings live at registers 263 and 264, signed, 0.1mm. Adding them
-# widens the read window to 13 registers. Longer reads across this gateway
-# drop replies more often, so they are left out by default.
+# Everything below widens the read window, which costs reliability on a
+# gateway that drops long replies. Enable only what you need.
+#
+# Register 275 is the width with the fingertip offset applied. It reads the
+# same as 267 until an offset is set, and reaching it stretches the window
+# from 2 registers to 9.
+#      - 275:
+#          - Word0:width with offset 0.1mm
+#
+# Registers 263 and 264 are depth readings, signed, 0.1mm.
 #      - 263:
 #          - Int0:actual depth 0.1mm
 #      - 264:
 #          - Int0:actual relative depth 0.1mm
+#
+# Registers 269..274 carry values that change constantly and are not in any
+# OnRobot documentation we have. They are not decoded here.
