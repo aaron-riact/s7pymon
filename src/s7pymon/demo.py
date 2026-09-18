@@ -15,7 +15,7 @@ import threading
 
 import click
 
-from .connection import _parse_s7_source as _parse_demo_source
+from .connection import parse_s7_source
 from .engine import MonitorEngine, ReadGroup, WriteMode
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
 from .variable import S7Area, Variable
@@ -90,7 +90,7 @@ class DemoConnection(Connection):
         with self._lock:
             if not self.connected:
                 raise ConnectionError("Not connected")
-            area, db = _parse_demo_source(source)
+            area, db = parse_s7_source(source)
             buf = self._buffer_for_locked(area, db)
             end = offset + size
             self._grow_locked(buf, end)
@@ -105,7 +105,7 @@ class DemoConnection(Connection):
         with self._lock:
             if not self.connected:
                 raise ConnectionError("Not connected")
-            area, db = _parse_demo_source(source)
+            area, db = parse_s7_source(source)
             buf = self._buffer_for_locked(area, db)
             end = offset + len(data)
             self._grow_locked(buf, end)

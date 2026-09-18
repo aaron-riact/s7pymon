@@ -28,7 +28,7 @@ __all__ = [
 _DB_SOURCE = re.compile(r"^DB(\d+)$")
 
 
-def _parse_s7_source(source: DataSource) -> tuple[S7Area, int]:
+def parse_s7_source(source: DataSource) -> tuple[S7Area, int]:
     """Split a DataSource like ``DB210`` or ``EB`` into (area, db_number)."""
     m = _DB_SOURCE.match(source.value)
     if m:
@@ -124,7 +124,7 @@ class S7Connection(Connection):
             if not self.connected:
                 raise ConnectionError("Not connected")
             try:
-                area, db = _parse_s7_source(source)
+                area, db = parse_s7_source(source)
                 if area == S7Area.DB:
                     raw = self._client.db_read(db, offset, size)
                 elif area == S7Area.EB:
@@ -156,7 +156,7 @@ class S7Connection(Connection):
             if not self.connected:
                 raise ConnectionError("Not connected")
             try:
-                area, db = _parse_s7_source(source)
+                area, db = parse_s7_source(source)
                 if area == S7Area.DB:
                     self._client.db_write(db, offset, data)
                 elif area == S7Area.EB:
