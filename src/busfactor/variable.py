@@ -538,6 +538,28 @@ class ModbusVariable(Variable):
         return self.offset // 2
 
     @property
+    def coil(self) -> int:
+        """Coil or discrete-input number this variable addresses."""
+        return self.offset * 8 + (self.extra or 0)
+
+    @property
+    def offset_display(self) -> str:
+        """Address as the device manual writes it, not as a byte offset.
+
+        Modbus documentation counts registers and coils, so showing the byte
+        offset means reading every address twice: once here, once halved.
+        A byte that sits inside a register has no register number of its own,
+        so it falls back to the byte offset, marked.
+        """
+        if self.table in ("Coil", "Discrete"):
+            return str(self.coil)
+        if self.offset % 2:
+            return f"b{self.offset}"
+        if self.extra is not None:
+            return f"{self.register}.{self.extra}"
+        return str(self.register)
+
+    @property
     def source(self) -> DataSource:
         return DataSource.modbus(self.table)
 

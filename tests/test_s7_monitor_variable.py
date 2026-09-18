@@ -747,3 +747,31 @@ class TestModbusVariableParsing:
     def test_unknown_table_is_rejected(self):
         with pytest.raises(ValueError, match="Invalid variable spec"):
             S7Variable.parse("MB.Nonsense.Byte0")
+
+
+class TestModbusOffsetDisplay:
+    def test_register_table_shows_the_register_number(self):
+        v = S7Variable.parse("MB.Holding.Word536")
+        assert v.offset_display == "268"
+
+    def test_register_bit_shows_register_and_bit(self):
+        v = S7Variable.parse("MB.Holding.Word536.6")
+        assert v.offset_display == "268.6"
+
+    def test_byte_inside_a_register_falls_back_to_the_byte_offset(self):
+        v = S7Variable.parse("MB.Holding.Byte537")
+        assert v.offset_display == "b537"
+
+    def test_coil_shows_the_coil_number(self):
+        v = S7Variable.parse("MB.Coil.Bit2.3")
+        assert isinstance(v, ModbusVariable)
+        assert v.offset_display == "19"
+        assert v.coil == 19
+
+    def test_discrete_input_shows_its_number(self):
+        v = S7Variable.parse("MB.Discrete.Bit1.0")
+        assert v.offset_display == "8"
+
+    def test_coil_without_a_bit_is_the_first_of_its_byte(self):
+        v = S7Variable.parse("MB.Coil.Byte2")
+        assert v.offset_display == "16"
