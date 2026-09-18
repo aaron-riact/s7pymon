@@ -132,6 +132,17 @@ _EIP_VAR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Pattern: MB.<Table>.<Type><offset>[.<extra>]
+# Offsets are byte offsets, as everywhere else; register 268 is byte 536.
+# Profiles address registers by number through ``field_vars``.
+_MODBUS_VAR_PATTERN = re.compile(
+    r"^MB\.(Holding|Input|Coil|Discrete)\.(Byte|Int|DInt|Word|DWord|Real|Bit|String|Chars)"
+    r"(\d+)(?:\.([0-9a-fA-F]+))?$",
+    re.IGNORECASE,
+)
+
+_MODBUS_TABLES = {t.lower(): t for t in ("Holding", "Input", "Coil", "Discrete")}
+
 
 # ---------------------------------------------------------------- shared helpers
 
@@ -361,13 +372,16 @@ class Variable(ABC):
 
         A ``.be``/``.le``/``.big``/``.little`` suffix on the spec selects the
         byte order; ``byte_order`` overrides both that and the protocol's
-        default (S7 big-endian, EIP little-endian).
+        default (S7 and Modbus big-endian, EIP little-endian).
         """
         spec_stripped, suffix_bo = _strip_byte_order_suffix(spec)
         bo = byte_order if byte_order is not None else suffix_bo
         m = _EIP_VAR_PATTERN.match(spec_stripped)
         if m:
             return _parse_eip(m, label, bo)
+        m = _MODBUS_VAR_PATTERN.match(spec_stripped)
+        if m:
+            return _parse_modbus(m, label, bo)
         m = _DB_VAR_PATTERN.match(spec_stripped)
         if m:
             return _parse_s7(m, label, bo, area=S7Area.DB, db=int(m.group(1)))
@@ -379,7 +393,8 @@ class Variable(ABC):
             f"Expected format: DB<num>.<Type><offset>[.<extra>][.<be|le|big|little>] "
             f"or <Area>.<Type><offset>[.<extra>][.<be|le|big|little>] "
             f"or EIP.<Assembly>.<Type><offset>[.<extra>][.<be|le|big|little>] "
-            f"e.g. DB200.Byte0, EB.Byte0, EIP.Input.Byte0, EIP.Input.Word2.be"
+            f"or MB.<Table>.<Type><offset>[.<extra>][.<be|le|big|little>] "
+            f"e.g. DB200.Byte0, EB.Byte0, EIP.Input.Byte0, MB.Holding.Word536"
         )
 
     def decode(self, data: bytes | bytearray) -> Union[int, float, bool, str]:
@@ -497,6 +512,55 @@ def _parse_eip(
     _validate_type(extra, data_type, spec)
     bo = byte_order if byte_order is not None else ByteOrder.LITTLE
     return EIPVariable(assembly=assembly, type=data_type, offset=offset, extra=extra, label=label, byte_order=bo)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModbusVariable(Variable):
+    """A variable in a Modbus register or bit table.
+
+    ``offset`` is a byte offset into the table, so holding register 268 is
+    offset 536.  Modbus puts the high byte of a register first, hence the
+    big-endian default inherited from Variable.
+    """
+
+    table: str  # "Holding", "Input", "Coil", "Discrete"
+
+    @property
+    def spec(self) -> str:
+        base = f"MB.{self.table}.{self.type.value}{self.offset}"
+        if self.extra is not None:
+            return f"{base}.{self.extra}"
+        return base
+
+    @property
+    def register(self) -> int:
+        """Holding/input register number this variable starts in."""
+        return self.offset // 2
+
+    @property
+    def source(self) -> DataSource:
+        return DataSource.modbus(self.table)
+
+    @property
+    def is_input(self) -> bool:
+        return self.table in ("Input", "Discrete")
+
+
+def _parse_modbus(
+    m: re.Match,
+    label: str | None = None,
+    byte_order: ByteOrder | None = None,
+) -> ModbusVariable:
+    """Build a ModbusVariable from a regex match against _MODBUS_VAR_PATTERN."""
+    table = _MODBUS_TABLES[m.group(1).lower()]
+    data_type = _parse_type_name(m.group(2))
+    offset = int(m.group(3))
+    extra = _parse_extra(m.group(4), data_type)
+    _validate_type(extra, data_type, m.group(0))
+    bo = byte_order if byte_order is not None else ByteOrder.BIG
+    return ModbusVariable(
+        table=table, type=data_type, offset=offset, extra=extra, label=label, byte_order=bo
+    )
 
 
 def compute_read_range(variables: Sequence[Variable]) -> tuple[int, int]:

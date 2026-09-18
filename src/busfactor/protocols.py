@@ -61,6 +61,8 @@ class DataSource:
     DataSource('DB210')
     >>> DataSource.eip("Input")
     DataSource('EIP.Input')
+    >>> DataSource.modbus("Holding")
+    DataSource('MB.Holding')
     >>> DataSource.s7_area("EB")
     DataSource('EB')
     """
@@ -80,6 +82,10 @@ class DataSource:
     @staticmethod
     def eip(name: str) -> DataSource:
         return DataSource(f"EIP.{name}")
+
+    @staticmethod
+    def modbus(table: str) -> DataSource:
+        return DataSource(f"MB.{table}")
 
 
 @dataclass

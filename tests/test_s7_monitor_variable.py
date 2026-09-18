@@ -7,6 +7,7 @@ from busfactor.variable import (
     DataType,
     S7Variable,
     EIPVariable,
+    ModbusVariable,
     compute_read_range,
     extract_value,
 )
@@ -673,3 +674,76 @@ class TestEIPVariableParsing:
     def test_offset_display_byte_no_extra(self):
         v = S7Variable.parse("EIP.Input.Byte0")
         assert v.offset_display == "0"
+
+
+class TestModbusVariableParsing:
+    def test_holding_byte(self):
+        v = S7Variable.parse("MB.Holding.Byte0")
+        assert isinstance(v, ModbusVariable)
+        assert v.table == "Holding"
+        assert v.type == DataType.BYTE
+        assert v.offset == 0
+        assert v.spec == "MB.Holding.Byte0"
+
+    def test_holding_word_at_register_offset(self):
+        v = S7Variable.parse("MB.Holding.Word536")
+        assert isinstance(v, ModbusVariable)
+        assert v.offset == 536
+        assert v.register == 268
+
+    def test_register_property_rounds_down_for_odd_offset(self):
+        v = S7Variable.parse("MB.Holding.Byte537")
+        assert isinstance(v, ModbusVariable)
+        assert v.register == 268
+
+    def test_bit_extra(self):
+        v = S7Variable.parse("MB.Holding.Bit536.6")
+        assert isinstance(v, ModbusVariable)
+        assert v.type == DataType.BIT
+        assert v.offset == 536
+        assert v.extra == 6
+        assert v.spec == "MB.Holding.Bit536.6"
+
+    def test_every_table_name(self):
+        for table in ("Holding", "Input", "Coil", "Discrete"):
+            v = S7Variable.parse(f"MB.{table}.Byte0")
+            assert isinstance(v, ModbusVariable)
+            assert v.table == table
+
+    def test_table_name_is_normalised(self):
+        v = S7Variable.parse("MB.holding.Byte0")
+        assert isinstance(v, ModbusVariable)
+        assert v.table == "Holding"
+
+    def test_defaults_to_big_endian(self):
+        v = S7Variable.parse("MB.Holding.Word0")
+        assert v.byte_order == ByteOrder.BIG
+
+    def test_byte_order_suffix_overrides(self):
+        v = S7Variable.parse("MB.Holding.Word0.le")
+        assert v.byte_order == ByteOrder.LITTLE
+
+    def test_source(self):
+        v = S7Variable.parse("MB.Holding.Word0")
+        assert str(v.source) == "MB.Holding"
+
+    def test_label(self):
+        v = S7Variable.parse("MB.Holding.Word536", label="status")
+        assert v.label == "status"
+        assert v.display_name == "status"
+
+    def test_decode_is_big_endian(self):
+        v = S7Variable.parse("MB.Holding.Word0")
+        assert v.decode(bytearray([0x01, 0x6C])) == 364
+
+    def test_encode_is_big_endian(self):
+        v = S7Variable.parse("MB.Holding.Word0")
+        assert bytes(v.encode(364)) == b"\x01\x6c"
+
+    def test_chars_byte_size(self):
+        v = S7Variable.parse("MB.Holding.Chars0.8")
+        assert v.byte_size == 8
+
+    def test_unknown_table_is_rejected(self):
+        with pytest.raises(ValueError, match="Invalid variable spec"):
+            S7Variable.parse("MB.Nonsense.Byte0")
