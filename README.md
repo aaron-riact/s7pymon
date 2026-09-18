@@ -164,7 +164,12 @@ address: 192.168.0.119
 port: 60000        # 502 is the default
 slave_id: 65
 framer: rtu        # socket for ordinary Modbus TCP
+retries: 3         # per request; 1 disables
 ```
+
+Serial gateways drop replies. pymodbus returns those as a well-formed but
+empty response rather than an error, so its own retry never runs — busfactor
+retries the request itself, three times, 20 ms apart.
 
 `framer: rtu` is for serial gateways that forward raw bytes — a robot flange
 bus, or socat in front of an RS485 adapter. Nothing in that path adds an MBAP

@@ -24,6 +24,7 @@ Example Modbus config file (gripper.yaml):
     port: 60000
     slave_id: 65
     framer: rtu
+    retries: 3
     interval: 0.2
     variables:
       - MB.Holding.Word534:width
@@ -96,6 +97,7 @@ class S7MonitorConfig:
     # Modbus-specific
     slave_id: int | None = None
     framer: str | None = None
+    retries: int | None = None
     # Output rules (dict of target -> rule config)
     rules: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Field variable expansions (register-map dissection)
@@ -145,6 +147,7 @@ class S7MonitorConfig:
             rpi_ms=raw.get("rpi_ms"),
             slave_id=raw.get("slave_id"),
             framer=raw.get("framer"),
+            retries=raw.get("retries"),
             rules=raw.get("rules", {}),
             field_vars=raw.get("field_vars", {}),
             verbose=raw.get("verbose", False),
@@ -175,6 +178,7 @@ class S7MonitorConfig:
         rpi_ms: int | None = None,
         slave_id: int | None = None,
         framer: str | None = None,
+        retries: int | None = None,
         verbose: bool | None = None,
     ) -> S7MonitorConfig:
         """Return a copy of this config with the given CLI values applied.
@@ -208,6 +212,7 @@ class S7MonitorConfig:
             "rpi_ms": rpi_ms,
             "slave_id": slave_id,
             "framer": framer,
+            "retries": retries,
             "verbose": verbose,
         }
         return replace(self, **{name: value for name, value in overrides.items() if value is not None})

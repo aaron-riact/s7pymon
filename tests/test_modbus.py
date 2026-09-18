@@ -39,7 +39,8 @@ class FakeResponse:
 class FakeClient:
     """Stands in for pymodbus. Holding/input registers default to address+1."""
 
-    def __init__(self, error=False, connect_ok=True, short_to=None, pad_bits=False):
+    def __init__(self, error=False, connect_ok=True, short_to=None, pad_bits=False,
+                 drop_first=0, fail_writes=0):
         self.calls: list[tuple] = []
         self.registers: dict[int, int] = {}
         self.coils: dict[int, bool] = {}
@@ -49,9 +50,16 @@ class FakeClient:
         self.short_to = short_to
         # pad_bits mimics pymodbus padding a bit reply out to a whole byte.
         self.pad_bits = pad_bits
+        # drop_first mimics a gateway losing the first N replies, then recovering.
+        self.drop_first = drop_first
+        # fail_writes mimics the first N writes being rejected.
+        self.fail_writes = fail_writes
         self.closed = False
 
     def _limit(self, values):
+        if self.drop_first > 0:
+            self.drop_first -= 1
+            return []
         return values if self.short_to is None else values[: self.short_to]
 
     def _bits(self, address, count):
@@ -91,6 +99,9 @@ class FakeClient:
 
     def write_registers(self, address, values, *, device_id=1):
         self.calls.append(("write_registers", address, list(values), device_id))
+        if self.fail_writes > 0:
+            self.fail_writes -= 1
+            return FakeResponse(error=True)
         for i, v in enumerate(values):
             self.registers[address + i] = v
         return FakeResponse()
@@ -343,6 +354,50 @@ class TestShortReplies:
         client.coils[3] = True
         # A 4-coil read comes back padded to a whole byte. That is not short.
         assert bytes(conn.read_source(COIL, 0, 1).data) == b"\x09"
+
+
+class TestRetry:
+    def test_a_dropped_reply_is_retried(self):
+        conn, client = make_connection(FakeClient(drop_first=1))
+        conn.connect()
+        result = conn.read_source(HOLDING, 534, 2)
+        assert len(result.data) == 2
+        assert len(client.calls) == 2
+
+    def test_it_gives_up_after_the_configured_attempts(self):
+        conn, client = make_connection(FakeClient(drop_first=99), retries=3)
+        conn.connect()
+        with pytest.raises(ConnectionError, match="returned 0 of 1 values"):
+            conn.read_source(HOLDING, 534, 2)
+        assert len(client.calls) == 3
+
+    def test_retries_can_be_turned_off(self):
+        conn, client = make_connection(FakeClient(drop_first=99), retries=1)
+        conn.connect()
+        with pytest.raises(ConnectionError):
+            conn.read_source(HOLDING, 534, 2)
+        assert len(client.calls) == 1
+
+    def test_a_disconnected_client_is_not_retried(self):
+        conn, client = make_connection()
+        with pytest.raises(ConnectionError, match="Not connected"):
+            conn.read_source(HOLDING, 534, 2)
+        assert client.calls == []
+
+    def test_a_rejected_write_is_retried(self):
+        conn, client = make_connection(FakeClient(fail_writes=1))
+        conn.connect()
+        conn.write_source(HOLDING, 0, bytearray(b"\x00\xc8"))
+        writes = [c for c in client.calls if c[0] == "write_registers"]
+        assert len(writes) == 2
+        assert client.registers[0] == 200
+
+    def test_a_write_that_keeps_failing_raises(self):
+        conn, client = make_connection(FakeClient(fail_writes=99), retries=3)
+        conn.connect()
+        with pytest.raises(ConnectionError, match="write registers"):
+            conn.write_source(HOLDING, 0, bytearray(b"\x00\xc8"))
+        assert len([c for c in client.calls if c[0] == "write_registers"]) == 3
 
 
 class TestSourceResolution:

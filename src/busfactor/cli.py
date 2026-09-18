@@ -211,6 +211,7 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
             protocol="modbus",
             slave_id=cfg.slave_id if cfg.slave_id is not None else 1,
             framer=cfg.framer or "socket",
+            retries=cfg.retries if cfg.retries is not None else 3,
         )
         connection = ModbusConnection(conn_config)
     else:

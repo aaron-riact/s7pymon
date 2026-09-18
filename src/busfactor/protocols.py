@@ -39,6 +39,7 @@ class ConnectionConfig:
     # Modbus-specific
     slave_id: int = 1
     framer: str = "socket"  # "socket" = Modbus TCP, "rtu" = RTU frames over TCP
+    retries: int = 3
 
     @property
     def display(self) -> str:

@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
+from typing import Callable, TypeVar
 
 from .errors import log_error
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
@@ -29,6 +31,8 @@ from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource
 log = logging.getLogger(__name__)
 
 _MODBUS_SOURCE = re.compile(r"^MB\.(Holding|Input|Coil|Discrete)$", re.IGNORECASE)
+
+T = TypeVar("T")
 
 # Modbus caps one request's payload. A read reply carries a single byte count,
 # and a write request carries its own, so writes fit two fewer registers.
@@ -39,6 +43,10 @@ MAX_BITS_PER_WRITE = 1968
 
 _REGISTER_TABLES = ("holding", "input")
 _BIT_TABLES = ("coil", "discrete")
+
+# OnRobot's own Dobot plugin retries a flange bus request three times, 20ms
+# apart. The same gateway is what drops replies here, so match it.
+RETRY_DELAY_S = 0.02
 
 
 def registers_to_bytes(registers: list[int]) -> bytearray:
@@ -273,6 +281,25 @@ class ModbusConnection(Connection):
             raise ConnectionError("Not connected")
         return self._client
 
+    def _retry(self, attempt: Callable[[], T]) -> T:
+        """Run one request, retrying a dropped reply.
+
+        A serial gateway sometimes answers with a well-formed but empty
+        response. pymodbus does not flag that as an error, so its own retry
+        never runs and the caller sees a short read instead of a lost frame.
+
+        Writes retry as well. A repeated register write carries the same
+        values, so re-sending one that was already applied changes nothing.
+        """
+        for _ in range(max(1, self._config.retries) - 1):
+            try:
+                return attempt()
+            except ConnectionError:
+                if not self.connected:
+                    raise
+                time.sleep(RETRY_DELAY_S)
+        return attempt()
+
     def _check(self, response, what: str):
         if response is None or (hasattr(response, "isError") and response.isError()):
             raise ConnectionError(f"Modbus {what} failed: {response}")
@@ -294,44 +321,70 @@ class ModbusConnection(Connection):
         return values[:count]
 
     def _client_read_holding(self, address: int, count: int) -> list[int]:
-        client = self._require_client()
         what = f"read holding {address}+{count}"
-        resp = client.read_holding_registers(
-            address, count=count, device_id=self._config.slave_id
-        )
-        return self._exactly(list(self._check(resp, what).registers), count, what)
+
+        def attempt():
+            resp = self._require_client().read_holding_registers(
+                address, count=count, device_id=self._config.slave_id
+            )
+            return self._exactly(list(self._check(resp, what).registers), count, what)
+
+        return self._retry(attempt)
 
     def _client_read_input(self, address: int, count: int) -> list[int]:
-        client = self._require_client()
         what = f"read input {address}+{count}"
-        resp = client.read_input_registers(
-            address, count=count, device_id=self._config.slave_id
-        )
-        return self._exactly(list(self._check(resp, what).registers), count, what)
+
+        def attempt():
+            resp = self._require_client().read_input_registers(
+                address, count=count, device_id=self._config.slave_id
+            )
+            return self._exactly(list(self._check(resp, what).registers), count, what)
+
+        return self._retry(attempt)
 
     def _client_read_coils(self, address: int, count: int) -> list[bool]:
-        client = self._require_client()
         what = f"read coils {address}+{count}"
-        resp = client.read_coils(address, count=count, device_id=self._config.slave_id)
-        return self._exactly(list(self._check(resp, what).bits), count, what)
+
+        def attempt():
+            resp = self._require_client().read_coils(
+                address, count=count, device_id=self._config.slave_id
+            )
+            return self._exactly(list(self._check(resp, what).bits), count, what)
+
+        return self._retry(attempt)
 
     def _client_read_discrete(self, address: int, count: int) -> list[bool]:
-        client = self._require_client()
         what = f"read discrete {address}+{count}"
-        resp = client.read_discrete_inputs(
-            address, count=count, device_id=self._config.slave_id
-        )
-        return self._exactly(list(self._check(resp, what).bits), count, what)
+
+        def attempt():
+            resp = self._require_client().read_discrete_inputs(
+                address, count=count, device_id=self._config.slave_id
+            )
+            return self._exactly(list(self._check(resp, what).bits), count, what)
+
+        return self._retry(attempt)
 
     def _client_write_registers(self, address: int, values: list[int]) -> None:
-        client = self._require_client()
-        resp = client.write_registers(address, values, device_id=self._config.slave_id)
-        self._check(resp, f"write registers {address}+{len(values)}")
+        what = f"write registers {address}+{len(values)}"
+
+        def attempt():
+            resp = self._require_client().write_registers(
+                address, values, device_id=self._config.slave_id
+            )
+            return self._check(resp, what)
+
+        self._retry(attempt)
 
     def _client_write_coils(self, address: int, values: list[bool]) -> None:
-        client = self._require_client()
-        resp = client.write_coils(address, values, device_id=self._config.slave_id)
-        self._check(resp, f"write coils {address}+{len(values)}")
+        what = f"write coils {address}+{len(values)}"
+
+        def attempt():
+            resp = self._require_client().write_coils(
+                address, values, device_id=self._config.slave_id
+            )
+            return self._check(resp, what)
+
+        self._retry(attempt)
 
     # ---------------------------------------------------------------- misc
 
