@@ -1313,12 +1313,7 @@ class S7MonitorApp(App):
 
     def action_cycle_write_mode(self) -> None:
         """Cycle through write modes: disabled → confirm → allowed → disabled."""
-        cycle = {
-            WriteMode.DISABLED: WriteMode.CONFIRM,
-            WriteMode.CONFIRM: WriteMode.ALLOWED,
-            WriteMode.ALLOWED: WriteMode.DISABLED,
-        }
-        self.write_mode = cycle[self.write_mode]
+        self.write_mode = self.write_mode.next()
         conn_status = self.query_one("#conn-status", ConnectionStatus)
         conn_status.write_mode = self.write_mode
         log = self.query_one("#log-panel", RichLog)

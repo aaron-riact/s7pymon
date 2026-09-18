@@ -38,6 +38,11 @@ class WriteMode(Enum):
     CONFIRM = "confirm"  # Writes require explicit confirmation (frontend prompt)
     ALLOWED = "allowed"  # Writes go through immediately
 
+    def next(self) -> WriteMode:
+        """The mode after this one when cycling: disabled → confirm → allowed → disabled."""
+        order = list(WriteMode)
+        return order[(order.index(self) + 1) % len(order)]
+
 
 def format_hex_dump(data: bytearray, start_offset: int = 0, bytes_per_line: int = 16) -> str:
     """Format raw bytes as a hex dump with offset, hex values, and ASCII."""
@@ -251,12 +256,7 @@ class MonitorEngine:
 
     def cycle_write_mode(self) -> WriteMode:
         """Advance disabled → confirm → allowed → disabled and return the new mode."""
-        nxt = {
-            WriteMode.DISABLED: WriteMode.CONFIRM,
-            WriteMode.CONFIRM: WriteMode.ALLOWED,
-            WriteMode.ALLOWED: WriteMode.DISABLED,
-        }
-        self._write_mode = nxt[self._write_mode]
+        self._write_mode = self._write_mode.next()
         return self._write_mode
 
     @property
