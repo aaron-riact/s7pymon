@@ -199,13 +199,15 @@ def build_connection(cfg: S7MonitorConfig, protocol: str, address: str) -> Conne
             framer=cfg.framer or "socket",
             retries=cfg.retries if cfg.retries is not None else 3,
         ))
-    return S7Connection(ConnectionConfig(
-        address=address,
-        rack=cfg.rack if cfg.rack is not None else 0,
-        slot=cfg.slot if cfg.slot is not None else 2,
-        tcp_port=cfg.port if cfg.port is not None else 102,
-        timeout_ms=timeout_ms,
-    ))
+    if protocol == "s7":
+        return S7Connection(ConnectionConfig(
+            address=address,
+            rack=cfg.rack if cfg.rack is not None else 0,
+            slot=cfg.slot if cfg.slot is not None else 2,
+            tcp_port=cfg.port if cfg.port is not None else 102,
+            timeout_ms=timeout_ms,
+        ))
+    raise RuntimeConfigError(f"Unknown protocol {protocol!r}: expected s7, eip or modbus")
 
 
 def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:

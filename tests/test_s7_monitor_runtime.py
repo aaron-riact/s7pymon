@@ -28,6 +28,11 @@ class TestResolveRuntime:
         with pytest.raises(RuntimeConfigError, match="variable specs"):
             resolve_runtime(cfg(address="10.0.0.1"))
 
+    def test_unknown_protocol_is_an_error(self):
+        # Defaulting a misspelt protocol to S7 would point the wrong driver at the device.
+        with pytest.raises(RuntimeConfigError, match="Unknown protocol"):
+            resolve_runtime(cfg(protocol="modbuss", address="10.0.0.1", variables=["MB.Holding.Word0"]))
+
     def test_basic_variables(self):
         rt = resolve_runtime(cfg(address="10.0.0.1", variables=["DB210.Byte0", "DB210.Int4"]))
         assert isinstance(rt, ResolvedRuntime)
