@@ -71,6 +71,23 @@ def bytes_to_bits(data: bytes | bytearray) -> list[bool]:
     return [bool(data[i >> 3] & (1 << (i & 7))) for i in range(len(data) * 8)]
 
 
+def format_row_address(source_label: str, byte_offset: int) -> str | None:
+    """A hex-dump row address counted the way a Modbus manual counts.
+
+    Returns ``None`` for any other protocol, and for a byte offset that falls
+    inside a register, so the caller keeps its byte-offset format for those.
+    """
+    match = _MODBUS_SOURCE.match(source_label)
+    if not match:
+        return None
+    table = match.group(1).lower()
+    if table in _BIT_TABLES:
+        return f"C{byte_offset * 8}"
+    if byte_offset % 2:
+        return None
+    return f"R{byte_offset // 2}"
+
+
 class ModbusConnection(Connection):
     """Manages a Modbus TCP or RTU-over-TCP connection with state tracking."""
 

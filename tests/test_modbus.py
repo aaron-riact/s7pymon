@@ -8,6 +8,7 @@ byte-to-register conversion can go wrong.
 import pytest
 
 from busfactor.modbus import (
+    format_row_address,
     MAX_BITS_PER_READ,
     MAX_REGISTERS_PER_READ,
     MAX_REGISTERS_PER_WRITE,
@@ -356,3 +357,27 @@ class TestSourceResolution:
         conn.connect()
         conn.read_source(DataSource("MB.holding"), 0, 2)
         assert client.calls[0][0] == "read_holding"
+
+
+class TestRowAddress:
+    def test_register_table_shows_the_register(self):
+        assert format_row_address("MB.Holding", 534) == "R267"
+
+    def test_input_registers_too(self):
+        assert format_row_address("MB.Input", 0) == "R0"
+
+    def test_rows_step_by_eight_registers(self):
+        # A hex dump row is 16 bytes, which is 8 registers.
+        assert format_row_address("MB.Holding", 534) == "R267"
+        assert format_row_address("MB.Holding", 550) == "R275"
+
+    def test_coil_table_shows_the_coil(self):
+        assert format_row_address("MB.Coil", 2) == "C16"
+        assert format_row_address("MB.Discrete", 0) == "C0"
+
+    def test_odd_byte_offset_has_no_register_number(self):
+        assert format_row_address("MB.Holding", 535) is None
+
+    def test_other_protocols_are_left_alone(self):
+        assert format_row_address("EIP.Input", 0) is None
+        assert format_row_address("DB210", 0) is None

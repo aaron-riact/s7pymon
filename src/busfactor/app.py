@@ -36,6 +36,7 @@ from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
 from .errors import log_error
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
+from .modbus import format_row_address
 from .rules import RulesEngine
 from .variable import DataType, Variable, compute_read_range, extract_value
 
@@ -358,7 +359,8 @@ class HexDumpDisplay(Static):
         interesting_abs = self._interesting_abs_offsets
 
         segs: list[Segment] = []
-        segs.append(Segment(f"  {abs_line:04X} │ ", Style.parse("dim cyan")))
+        row_address = format_row_address(label, abs_line) or f"{abs_line:04X}"
+        segs.append(Segment(f"  {row_address:>4} │ ", Style.parse("dim cyan")))
 
         for j, b in enumerate(chunk):
             byte_abs = start + byte_start + j
