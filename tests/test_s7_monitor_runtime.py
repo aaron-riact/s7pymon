@@ -92,3 +92,41 @@ class TestLoadMergedConfig:
         assert merged.address == "1.2.3.4"
         assert merged.rack == 2
         assert merged.variables == ["DB1.Byte0"]
+
+
+class TestResolveModbusRuntime:
+    def test_selects_the_modbus_connection(self):
+        rt = resolve_runtime(cfg(
+            protocol="modbus", address="192.168.0.119", variables=["MB.Holding.Word534"]))
+        assert rt.connection.protocol == "modbus"
+
+    def test_defaults_to_port_502_slave_1_socket_framing(self):
+        rt = resolve_runtime(cfg(
+            protocol="modbus", address="10.0.0.1", variables=["MB.Holding.Word0"]))
+        assert rt.connection.config.tcp_port == 502
+        assert rt.connection.config.slave_id == 1
+        assert rt.connection.config.framer == "socket"
+
+    def test_port_slave_and_framer_come_from_config(self):
+        rt = resolve_runtime(cfg(
+            protocol="modbus", address="192.168.0.119", port=60000,
+            slave_id=65, framer="rtu", variables=["MB.Holding.Word534"]))
+        assert rt.connection.config.tcp_port == 60000
+        assert rt.connection.config.slave_id == 65
+        assert rt.connection.config.framer == "rtu"
+
+    def test_read_group_covers_the_monitored_registers(self):
+        rt = resolve_runtime(cfg(
+            protocol="modbus", address="10.0.0.1",
+            variables=["MB.Holding.Word534", "MB.Holding.Word536"]))
+        assert len(rt.read_groups) == 1
+        group = rt.read_groups[0]
+        assert str(group.source) == "MB.Holding"
+        assert group.start == 534
+        assert group.size == 4
+
+    def test_separate_tables_get_separate_read_groups(self):
+        rt = resolve_runtime(cfg(
+            protocol="modbus", address="10.0.0.1",
+            variables=["MB.Holding.Word0", "MB.Coil.Bit0.0"]))
+        assert {str(g.source) for g in rt.read_groups} == {"MB.Holding", "MB.Coil"}

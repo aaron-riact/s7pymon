@@ -17,6 +17,18 @@ Example config file (monitor.yaml):
       - DB210.Bit1.0:e_stop
       - EB.Byte0:input0
 
+Example Modbus config file (gripper.yaml):
+
+    protocol: modbus
+    address: 192.168.0.119
+    port: 60000
+    slave_id: 65
+    framer: rtu
+    interval: 0.2
+    variables:
+      - MB.Holding.Word534:width
+      - MB.Holding.Bit536.6:safety error
+
 Example EIP config file (eip-monitor.yaml):
 
     protocol: eip
@@ -81,6 +93,9 @@ class S7MonitorConfig:
     input_size: int | None = None
     output_size: int | None = None
     rpi_ms: int | None = None
+    # Modbus-specific
+    slave_id: int | None = None
+    framer: str | None = None
     # Output rules (dict of target -> rule config)
     rules: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Field variable expansions (register-map dissection)
@@ -128,6 +143,8 @@ class S7MonitorConfig:
             input_size=raw.get("input_size"),
             output_size=raw.get("output_size"),
             rpi_ms=raw.get("rpi_ms"),
+            slave_id=raw.get("slave_id"),
+            framer=raw.get("framer"),
             rules=raw.get("rules", {}),
             field_vars=raw.get("field_vars", {}),
             verbose=raw.get("verbose", False),
@@ -156,6 +173,8 @@ class S7MonitorConfig:
         input_size: int | None = None,
         output_size: int | None = None,
         rpi_ms: int | None = None,
+        slave_id: int | None = None,
+        framer: str | None = None,
         verbose: bool | None = None,
     ) -> S7MonitorConfig:
         """Return a copy of this config with the given CLI values applied.
@@ -187,6 +206,8 @@ class S7MonitorConfig:
             "input_size": input_size,
             "output_size": output_size,
             "rpi_ms": rpi_ms,
+            "slave_id": slave_id,
+            "framer": framer,
             "verbose": verbose,
         }
         return replace(self, **{name: value for name, value in overrides.items() if value is not None})

@@ -166,3 +166,39 @@ class TestS7MonitorConfigMergeCli:
             "EIP.Output.Byte0": {"follow": "EIP.Input.Byte0"},
             "EIP.Output.Bit0.0": {"toggle": 2},
         }
+
+
+class TestModbusConfig:
+    def test_reads_modbus_fields_from_yaml(self, tmp_path):
+        path = tmp_path / "gripper.yaml"
+        path.write_text(
+            "protocol: modbus\n"
+            "address: 192.168.0.119\n"
+            "port: 60000\n"
+            "slave_id: 65\n"
+            "framer: rtu\n"
+        )
+        c = S7MonitorConfig.from_yaml(path)
+        assert c.protocol == "modbus"
+        assert c.port == 60000
+        assert c.slave_id == 65
+        assert c.framer == "rtu"
+
+    def test_modbus_fields_default_to_none(self, tmp_path):
+        path = tmp_path / "plain.yaml"
+        path.write_text("address: 10.0.0.1\n")
+        c = S7MonitorConfig.from_yaml(path)
+        assert c.slave_id is None
+        assert c.framer is None
+
+    def test_cli_overrides_slave_and_framer(self):
+        c = S7MonitorConfig(slave_id=1, framer="socket")
+        merged = c.merge_cli(slave_id=65, framer="rtu")
+        assert merged.slave_id == 65
+        assert merged.framer == "rtu"
+
+    def test_merge_keeps_config_values_when_cli_omits_them(self):
+        c = S7MonitorConfig(slave_id=65, framer="rtu")
+        merged = c.merge_cli()
+        assert merged.slave_id == 65
+        assert merged.framer == "rtu"

@@ -39,6 +39,7 @@ import click
 from .config import S7MonitorConfig
 from .connection import S7Connection
 from .eip import EIPConnection, build_eip_read_groups
+from .modbus import ModbusConnection
 from .errors import dump_errors
 from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
@@ -201,6 +202,17 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
             rpi_ms=cfg.rpi_ms if cfg.rpi_ms is not None else 50,
         )
         connection: Connection = EIPConnection(conn_config)
+    elif protocol == "modbus":
+        conn_config = ConnectionConfig(
+            address=final_address,
+            # 502 is the registered Modbus port; serial gateways use their own.
+            tcp_port=cfg.port if cfg.port is not None else 502,
+            timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
+            protocol="modbus",
+            slave_id=cfg.slave_id if cfg.slave_id is not None else 1,
+            framer=cfg.framer or "socket",
+        )
+        connection = ModbusConnection(conn_config)
     else:
         conn_config = ConnectionConfig(
             address=final_address,
