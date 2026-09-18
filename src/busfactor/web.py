@@ -39,6 +39,7 @@ from typing import cast
 
 import click
 
+from .cli import RuntimeConfigError, load_merged_config, monitor_options, resolve_runtime
 from .config import S7MonitorConfig
 from .engine import MonitorEngine, WriteBlockedError, WriteMode
 from .errors import dump_errors, log_error
@@ -383,31 +384,10 @@ def _build_logger(runtime) -> DataLogger | None:
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("address", required=False, default=None)
-@click.argument("variables", nargs=-1)
-@click.option("-c", "--config", "config_file", default=None, type=click.Path(), help="YAML config file.")
+@monitor_options
 @click.option("--host", default="127.0.0.1", help="HTTP bind host (default: 127.0.0.1).")
 @click.option("-P", "--http-port", "http_port", default=8731, type=int, help="HTTP port (default: 8731).")
 @click.option("--open", "open_browser", is_flag=True, default=False, help="Open the dashboard in a browser.")
-@click.option("-r", "--rack", default=None, type=int, help="Rack number (default: 0).")
-@click.option("-s", "--slot", default=None, type=int, help="Slot number (default: 2).")
-@click.option("-p", "--port", default=None, type=int, help="PLC TCP port (default: 102).")
-@click.option("-t", "--timeout", default=None, type=int, help="Connection timeout in ms (default: 3000).")
-@click.option("-i", "--interval", default=None, type=float, help="Poll interval in seconds (default: 1.0).")
-@click.option("--db", "db_number", default=None, type=int, help="DB number for raw range mode.")
-@click.option("--start", "db_start", default=None, type=int, help="Start offset for raw range mode.")
-@click.option("--size", "db_size", default=None, type=int, help="Number of bytes for raw range mode.")
-@click.option(
-    "-w", "--write-mode", "write_mode",
-    type=click.Choice(["disabled", "confirm", "allowed"], case_sensitive=False),
-    default=None, help="Write permission mode (default: disabled).",
-)
-@click.option("-l", "--log-file", "log_file", default=None, type=click.Path(), help="Log data changes to file.")
-@click.option(
-    "--log-format", "log_format",
-    type=click.Choice(["csv", "jsonl"], case_sensitive=False),
-    default=None, help="Log file format (default: csv).",
-)
 def web_cli(
     address: str | None,
     variables: tuple[str, ...],
@@ -433,8 +413,6 @@ def web_cli(
     serves an ultra-modern dashboard over HTTP with a live Server-Sent Events
     feed. Open the printed URL in Chrome to monitor and (optionally) write.
     """
-    from .cli import RuntimeConfigError, load_merged_config, resolve_runtime
-
     cfg = load_merged_config(
         config_file, address=address, rack=rack, slot=slot, port=port,
         timeout=timeout, interval=interval, write_mode=write_mode,

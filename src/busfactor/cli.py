@@ -347,41 +347,43 @@ def load_merged_config(
     )
 
 
+# The address, variables and connection options every front end takes.
+# Applied in this order, which is the order --help lists them in.
+_MONITOR_OPTIONS = [
+    click.argument("address", required=False, default=None),
+    click.argument("variables", nargs=-1),
+    click.option("-c", "--config", "config_file", default=None, type=click.Path(), help="YAML config file."),
+    click.option("-r", "--rack", default=None, type=int, help="Rack number (S7, default: 0)."),
+    click.option("-s", "--slot", default=None, type=int, help="Slot number (S7, default: 2)."),
+    click.option("-p", "--port", default=None, type=int, help="Device TCP port (default: 102 S7, 44818 EIP, 502 Modbus)."),
+    click.option("-t", "--timeout", default=None, type=int, help="Connection timeout in ms (default: 3000)."),
+    click.option("-i", "--interval", default=None, type=float, help="Poll interval in seconds (default: 1.0)."),
+    click.option("--db", "db_number", default=None, type=int, help="DB number for raw range mode."),
+    click.option("--start", "db_start", default=None, type=int, help="Start offset for raw range mode."),
+    click.option("--size", "db_size", default=None, type=int, help="Number of bytes for raw range mode."),
+    click.option(
+        "-w", "--write-mode", "write_mode",
+        type=click.Choice(["disabled", "confirm", "allowed"], case_sensitive=False),
+        default=None, help="Write permission mode (default: disabled).",
+    ),
+    click.option("-l", "--log-file", "log_file", default=None, type=click.Path(), help="Log data changes to file."),
+    click.option(
+        "--log-format", "log_format",
+        type=click.Choice(["csv", "jsonl"], case_sensitive=False),
+        default=None, help="Log file format (default: csv).",
+    ),
+]
+
+
+def monitor_options(command):
+    """Attach the shared monitor arguments and options to a click command."""
+    for decorator in reversed(_MONITOR_OPTIONS):
+        command = decorator(command)
+    return command
+
+
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("address", required=False, default=None)
-@click.argument("variables", nargs=-1)
-@click.option("-c", "--config", "config_file", default=None, type=click.Path(), help="YAML config file.")
-@click.option("-r", "--rack", default=None, type=int, help="Rack number (default: 0).")
-@click.option("-s", "--slot", default=None, type=int, help="Slot number (default: 2).")
-@click.option("-p", "--port", default=None, type=int, help="TCP port (default: 102).")
-@click.option("-t", "--timeout", default=None, type=int, help="Connection timeout in ms (default: 3000).")
-@click.option("-i", "--interval", default=None, type=float, help="Poll interval in seconds (default: 1.0).")
-@click.option("--db", "db_number", default=None, type=int, help="DB number for raw range mode.")
-@click.option("--start", "db_start", default=None, type=int, help="Start offset for raw range mode.")
-@click.option("--size", "db_size", default=None, type=int, help="Number of bytes for raw range mode.")
-@click.option(
-    "-w",
-    "--write-mode",
-    "write_mode",
-    type=click.Choice(["disabled", "confirm", "allowed"], case_sensitive=False),
-    default=None,
-    help="Write permission mode (default: disabled).",
-)
-@click.option(
-    "-l",
-    "--log-file",
-    "log_file",
-    default=None,
-    type=click.Path(),
-    help="Log data changes to file.",
-)
-@click.option(
-    "--log-format",
-    "log_format",
-    type=click.Choice(["csv", "jsonl"], case_sensitive=False),
-    default=None,
-    help="Log file format (default: csv).",
-)
+@monitor_options
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Verbose connection debug output.")
 def main(
     address: str | None,
