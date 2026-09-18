@@ -13,10 +13,9 @@ or mixed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from .protocols import Connection
-from .variable import DataType, S7Variable
+from .variable import DataType, Variable
 
 
 @dataclass(frozen=True)
@@ -80,7 +79,7 @@ class RulesEngine:
         formatted = current_values.get(rule.source)
         if formatted is None:
             return
-        target_var = S7Variable.parse(rule.target)
+        target_var = Variable.parse(rule.target)
         parsed = target_var.parse_input(formatted)
         if target_var.type == DataType.BIT:
             if not isinstance(parsed, bool):
@@ -96,7 +95,7 @@ class RulesEngine:
     def _apply_toggle(self, rule: ToggleRule, connection: Connection) -> None:
         key = id(rule)
         counter = self._counters.get(key, 0) + 1
-        target_var = S7Variable.parse(rule.target)
+        target_var = Variable.parse(rule.target)
 
         if counter >= rule.period:
             self._counters[key] = 0
@@ -109,7 +108,7 @@ class RulesEngine:
     def _write_toggle_state(
         self,
         connection: Connection,
-        var: Any,
+        var: Variable,
         state: bool,
     ) -> None:
         if var.type == DataType.BIT:
@@ -122,7 +121,7 @@ class RulesEngine:
     def _apply_pulse(self, rule: PulseRule, connection: Connection) -> None:
         key = id(rule)
         remaining = self._pulse_remaining.get(key, 0)
-        target_var = S7Variable.parse(rule.target)
+        target_var = Variable.parse(rule.target)
 
         if remaining > 0:
             self._pulse_remaining[key] = remaining - 1

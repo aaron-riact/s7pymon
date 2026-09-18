@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import re
 import struct
+from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Union
@@ -214,27 +216,29 @@ def _parse_type_name(type_name: str) -> DataType:
     return _type_map[type_name.lower()]
 
 
-@dataclass(frozen=True)
-class S7Variable:
-    """Parsed S7 variable specification."""
+@dataclass(frozen=True, kw_only=True)
+class Variable(ABC):
+    """One addressable value: a data type at a byte offset in a data source.
 
-    db: int  # DB number for DB area; 0 for non-DB areas
+    Decoding, encoding and formatting depend only on the data type and live
+    here. A subclass adds the protocol-specific part: where the bytes live
+    (:attr:`source`) and how the spec string is spelled (:attr:`spec`).
+    """
+
     type: DataType
     offset: int
     extra: int | None = None  # bit number for Bit, max length for String
     label: str | None = None  # optional human-readable name
-    area: S7Area = S7Area.DB  # memory area
 
     @property
+    @abstractmethod
     def spec(self) -> str:
-        """Canonical spec string like DB200.Byte0 or EB.Byte0."""
-        if self.area == S7Area.DB:
-            base = f"DB{self.db}.{self.type.value}{self.offset}"
-        else:
-            base = f"{self.area.value}.{self.type.value}{self.offset}"
-        if self.extra is not None:
-            return f"{base}.{self.extra}"
-        return base
+        """Canonical spec string, e.g. ``DB200.Byte0`` or ``EIP.Input.Byte0``."""
+
+    @property
+    @abstractmethod
+    def source(self) -> DataSource:
+        """The data source this variable is read from and written to."""
 
     @property
     def display_name(self) -> str:
@@ -252,39 +256,18 @@ class S7Variable:
     def read_size(self) -> int:
         return self.byte_size
 
-    @property
-    def source(self) -> DataSource:
-        if self.area == S7Area.DB:
-            return DataSource.s7_db(self.db)
-        return DataSource.s7_area(self.area.value)
-
-    @classmethod
-    def parse(cls, spec: str, label: str | None = None) -> S7Variable | EIPVariable:
+    @staticmethod
+    def parse(spec: str, label: str | None = None) -> Variable:
+        """Parse a spec string of any supported protocol into a variable."""
         m = _EIP_VAR_PATTERN.match(spec)
         if m:
             return _parse_eip(m, label)
         m = _DB_VAR_PATTERN.match(spec)
         if m:
-            db = int(m.group(1))
-            type_name = m.group(2)
-            offset = int(m.group(3))
-            extra_str = m.group(4)
-            extra = int(extra_str) if extra_str is not None else None
-            data_type = _parse_type_name(type_name)
-            _validate_type(extra, data_type, spec)
-            return cls(db=db, type=data_type, offset=offset, extra=extra, label=label, area=S7Area.DB)
+            return _parse_s7(m, label, area=S7Area.DB, db=int(m.group(1)))
         m = _AREA_VAR_PATTERN.match(spec)
         if m:
-            area_name = m.group(1)
-            area_map: dict[str, S7Area] = {str(a.value).lower(): a for a in S7Area}
-            area = area_map[area_name.lower()]
-            type_name = m.group(2)
-            offset = int(m.group(3))
-            extra_str = m.group(4)
-            extra = int(extra_str) if extra_str is not None else None
-            data_type = _parse_type_name(type_name)
-            _validate_type(extra, data_type, spec)
-            return cls(db=0, type=data_type, offset=offset, extra=extra, label=label, area=area)
+            return _parse_s7(m, label, area=_AREAS[m.group(1).lower()], db=0)
         raise ValueError(
             f"Invalid variable spec: {spec!r}. "
             f"Expected format: DB<num>.<Type><offset>[.<extra>] "
@@ -312,15 +295,35 @@ class S7Variable:
         return _parse_input(self.type, text)
 
 
-@dataclass(frozen=True)
-class EIPVariable:
-    """EtherNet/IP assembly variable specification."""
+@dataclass(frozen=True, kw_only=True)
+class S7Variable(Variable):
+    """A variable in an S7 data block or process area."""
+
+    db: int  # DB number for the DB area; 0 for the other areas
+    area: S7Area = S7Area.DB
+
+    @property
+    def spec(self) -> str:
+        if self.area == S7Area.DB:
+            base = f"DB{self.db}.{self.type.value}{self.offset}"
+        else:
+            base = f"{self.area.value}.{self.type.value}{self.offset}"
+        if self.extra is not None:
+            return f"{base}.{self.extra}"
+        return base
+
+    @property
+    def source(self) -> DataSource:
+        if self.area == S7Area.DB:
+            return DataSource.s7_db(self.db)
+        return DataSource.s7_area(self.area.value)
+
+
+@dataclass(frozen=True, kw_only=True)
+class EIPVariable(Variable):
+    """A variable in an EtherNet/IP assembly."""
 
     assembly: str  # "Input", "Output", "Config", or numeric
-    type: DataType
-    offset: int
-    extra: int | None = None
-    label: str | None = None
 
     @property
     def spec(self) -> str:
@@ -330,42 +333,21 @@ class EIPVariable:
         return base
 
     @property
-    def display_name(self) -> str:
-        return self.label or self.spec
-
-    @property
-    def byte_size(self) -> int:
-        if self.type == DataType.STRING:
-            if self.extra is None:
-                raise ValueError(f"String variable {self.spec} requires max length")
-            return self.extra + 2
-        return self.type.byte_size
-
-    @property
-    def read_size(self) -> int:
-        return self.byte_size
-
-    @property
     def source(self) -> DataSource:
         return DataSource.eip(self.assembly)
 
-    def decode(self, data: bytes | bytearray) -> Union[int, float, bool, str]:
-        if len(data) < self.byte_size:
-            raise ValueError(f"Need {self.byte_size} bytes to decode {self.spec}, got {len(data)}")
-        return _decode_value(data, self.type, self.extra)
 
-    def encode(self, value: Union[int, float, bool, str]) -> bytearray:
-        return _encode_value(self.type, self.extra, value)
+_AREAS: dict[str, S7Area] = {str(a.value).lower(): a for a in S7Area}
 
-    def encode_bit(self, current_byte: int, value: bool) -> bytearray:
-        assert self.type == DataType.BIT and self.extra is not None
-        return _encode_bit_value(self.extra, current_byte, value)
 
-    def format_value(self, value: Union[int, float, bool, str]) -> str:
-        return _format_value(self.type, value)
-
-    def parse_input(self, text: str) -> Union[int, float, bool, str]:
-        return _parse_input(self.type, text)
+def _parse_s7(m: re.Match, label: str | None, *, area: S7Area, db: int) -> S7Variable:
+    """Build an S7Variable from a match against _DB_VAR_PATTERN or _AREA_VAR_PATTERN."""
+    data_type = _parse_type_name(m.group(2))
+    offset = int(m.group(3))
+    extra_str = m.group(4)
+    extra = int(extra_str) if extra_str is not None else None
+    _validate_type(extra, data_type, m.group(0))
+    return S7Variable(db=db, type=data_type, offset=offset, extra=extra, label=label, area=area)
 
 
 def _parse_eip(m: re.Match, label: str | None = None) -> EIPVariable:
@@ -381,7 +363,7 @@ def _parse_eip(m: re.Match, label: str | None = None) -> EIPVariable:
     return EIPVariable(assembly=assembly, type=data_type, offset=offset, extra=extra, label=label)
 
 
-def compute_read_range(variables: list) -> tuple[int, int]:
+def compute_read_range(variables: Sequence[Variable]) -> tuple[int, int]:
     """Compute the minimal (start, size) to cover all variables in a single read.
 
     All variables must be in the same source (same assembly/DB).
@@ -400,7 +382,7 @@ def compute_read_range(variables: list) -> tuple[int, int]:
 
 
 def extract_value(
-    variable, data: bytes | bytearray, data_start: int
+    variable: Variable, data: bytes | bytearray, data_start: int
 ) -> Union[int, float, bool, str]:
     """Extract a variable's value from a read buffer.
 

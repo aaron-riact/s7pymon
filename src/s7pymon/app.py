@@ -26,7 +26,7 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, St
 from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
-from .variable import S7Area, DataType, S7Variable, compute_read_range, extract_value
+from .variable import DataType, Variable, compute_read_range, extract_value
 
 __all__ = ["S7MonitorApp", "WriteMode", "format_hex_dump", "ReadGroup"]
 
@@ -138,7 +138,7 @@ class EditVariableScreen(ModalScreen[str | None]):
     }
     """
 
-    def __init__(self, variable: S7Variable, current_value: str):
+    def __init__(self, variable: Variable, current_value: str):
         super().__init__()
         self._variable = variable
         self._current_value = current_value
@@ -335,7 +335,7 @@ class S7MonitorApp(App):
     def __init__(
         self,
         connection: Connection,
-        variables: list,
+        variables: list[Variable],
         read_groups: list[ReadGroup],
         poll_interval: float = 1.0,
         write_mode: WriteMode = WriteMode.DISABLED,
@@ -587,7 +587,7 @@ class S7MonitorApp(App):
         self._prepare_variable_write(var, result)
 
     @work(thread=True)
-    def _prepare_variable_write(self, var: S7Variable, text: str) -> None:
+    def _prepare_variable_write(self, var: Variable, text: str) -> None:
         """Prepare a variable write and show confirmation dialog."""
         log = self.query_one("#log-panel", RichLog)
         try:
@@ -705,7 +705,7 @@ class S7MonitorApp(App):
         elif command == "set" and len(parts) >= 3:
             # set <var_spec> <value>  (supports DB and area specs)
             try:
-                var = S7Variable.parse(parts[1])
+                var = Variable.parse(parts[1])
                 value_text = " ".join(parts[2:])
                 parsed = var.parse_input(value_text)
 

@@ -29,6 +29,7 @@ Examples:
 
 import sys
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,10 +42,10 @@ from .engine import ReadGroup, WriteMode
 from .logging import LogFormat
 from .protocols import Connection, ConnectionConfig, DataSource
 from .rules import FollowRule, OutputRule, PulseRule, RulesEngine, ToggleRule
-from .variable import S7Area, DataType, S7Variable, compute_read_range
+from .variable import S7Area, DataType, S7Variable, Variable, compute_read_range
 
 
-def parse_variable_arg(arg: str) -> S7Variable:
+def parse_variable_arg(arg: str) -> Variable:
     """Parse a CLI variable argument, supporting optional label syntax.
 
     Formats:
@@ -54,8 +55,8 @@ def parse_variable_arg(arg: str) -> S7Variable:
     """
     if ":" in arg:
         spec, label = arg.split(":", 1)
-        return S7Variable.parse(spec, label=label)
-    return S7Variable.parse(arg)
+        return Variable.parse(spec, label=label)
+    return Variable.parse(arg)
 
 
 def build_default_variables(db: int, start: int, size: int) -> list[S7Variable]:
@@ -66,9 +67,9 @@ def build_default_variables(db: int, start: int, size: int) -> list[S7Variable]:
     ]
 
 
-def build_read_groups(variables: list) -> list[ReadGroup]:
+def build_read_groups(variables: Sequence[Variable]) -> list[ReadGroup]:
     """Group variables by source and compute one read range per group."""
-    groups: dict[DataSource, list] = defaultdict(list)
+    groups: dict[DataSource, list[Variable]] = defaultdict(list)
     for var in variables:
         groups[var.source].append(var)
 
@@ -80,7 +81,7 @@ def build_read_groups(variables: list) -> list[ReadGroup]:
     return read_groups
 
 
-def _group_label(var) -> str:
+def _group_label(var: Variable) -> str:
     """Hex dump heading for the group a variable belongs to.
 
     S7 areas get their description ("EB (Process Input)"); everything else
@@ -140,7 +141,7 @@ class ResolvedRuntime:
     """
 
     connection: Connection
-    variables: list
+    variables: list[Variable]
     read_groups: list[ReadGroup]
     poll_interval: float
     write_mode: WriteMode
@@ -191,7 +192,7 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
         connection = S7Connection(conn_config)
 
     if cfg.variables:
-        parsed_vars = []
+        parsed_vars: list[Variable] = []
         for v in cfg.variables:
             try:
                 parsed_vars.append(parse_variable_arg(v))
@@ -221,7 +222,7 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
 
     elif protocol == "s7" and cfg.db is not None and cfg.size is not None:
         db_start_val = cfg.start if cfg.start is not None else 0
-        parsed_vars = build_default_variables(cfg.db, db_start_val, cfg.size)
+        parsed_vars = list[Variable](build_default_variables(cfg.db, db_start_val, cfg.size))
         read_groups = build_read_groups(parsed_vars)
     else:
         raise RuntimeConfigError(

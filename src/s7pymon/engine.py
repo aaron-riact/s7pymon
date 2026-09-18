@@ -23,7 +23,7 @@ from typing import Union
 from .protocols import Connection, ConnectionState, DataSource
 from .logging import DataLogger, LogEntry
 from .rules import RulesEngine
-from .variable import S7Area, DataType, S7Variable, extract_value
+from .variable import DataType, Variable, extract_value
 
 Value = Union[int, float, bool, str]
 
@@ -190,7 +190,7 @@ class MonitorEngine:
     def __init__(
         self,
         connection: Connection,
-        variables: list,
+        variables: list[Variable],
         read_groups: list[ReadGroup],
         poll_interval: float = 1.0,
         write_mode: WriteMode = WriteMode.DISABLED,
@@ -215,7 +215,7 @@ class MonitorEngine:
         return self._connection
 
     @property
-    def variables(self) -> list:
+    def variables(self) -> list[Variable]:
         return self._variables
 
     @property
@@ -290,7 +290,7 @@ class MonitorEngine:
             pass
 
     # ------------------------------------------------------------------- read
-    def find_variable(self, spec: str):
+    def find_variable(self, spec: str) -> Variable | None:
         return next((v for v in self._variables if v.spec == spec), None)
 
     def status_snapshot(self) -> Snapshot:
@@ -341,7 +341,7 @@ class MonitorEngine:
         return self._snapshot(error=None, groups=groups, readings=readings)
 
     def _read_variable(
-        self, var, buffers: dict[str, tuple[bytearray, int]]
+        self, var: Variable, buffers: dict[str, tuple[bytearray, int]]
     ) -> VariableReading:
         label = str(var.source)
         key = str(var.source)
@@ -382,7 +382,7 @@ class MonitorEngine:
 
     def _reading(
         self,
-        var: S7Variable,
+        var: Variable,
         label: str,
         *,
         value: str,
@@ -431,7 +431,7 @@ class MonitorEngine:
         """
         if not self.writes_enabled:
             raise WriteBlockedError("Writes are disabled")
-        var = self.find_variable(spec) or S7Variable.parse(spec)
+        var = self.find_variable(spec) or Variable.parse(spec)
         return self._write(var, text)
 
     def write_spec(self, spec: str, text: str) -> WriteResult:
@@ -441,9 +441,9 @@ class MonitorEngine:
         """
         if not self.writes_enabled:
             raise WriteBlockedError("Writes are disabled")
-        return self._write(S7Variable.parse(spec), text)
+        return self._write(Variable.parse(spec), text)
 
-    def _write(self, var, text: str) -> WriteResult:
+    def _write(self, var: Variable, text: str) -> WriteResult:
         parsed = var.parse_input(text)
         if var.type == DataType.BIT:
             if not isinstance(parsed, bool):

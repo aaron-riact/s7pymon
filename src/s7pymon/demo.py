@@ -18,7 +18,7 @@ import click
 from .connection import _parse_s7_source as _parse_demo_source
 from .engine import MonitorEngine, ReadGroup, WriteMode
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
-from .variable import S7Area, S7Variable
+from .variable import S7Area, Variable
 from .web import S7WebServer
 
 DEMO_DB = 210
@@ -155,7 +155,7 @@ def build_demo_engine(
     """Create a demo connection and engine for the browser dashboard."""
 
     connection = DemoConnection(tick_interval=poll_interval, seed=seed)
-    variables = [S7Variable.parse(spec, label=label) for spec, label in DEMO_VARIABLES]
+    variables = [Variable.parse(spec, label=label) for spec, label in DEMO_VARIABLES]
     engine = MonitorEngine(
         connection=connection,
         variables=variables,
