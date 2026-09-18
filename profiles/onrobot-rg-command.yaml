@@ -1,0 +1,35 @@
+# OnRobot RG2 / RG6 -- command registers, writable.
+#
+# Separate from the status profile because busfactor reads one contiguous
+# window per table, and registers 3..257 are not implemented. Commands live
+# at 0..2, status at 267..275, so they cannot share a window.
+#
+# A grip is three registers written together: force, width, then the control
+# word. Writing control last is what starts the motion.
+#
+#   target force 0.1N   e.g. 200 = 20 N     RG2 max 400, RG6 max 1200
+#   target width 0.1mm  e.g. 500 = 50 mm    RG2 max 1100, RG6 max 1600
+#   control             1 grip, 8 stop, 16 grip with fingertip offset
+#
+# write_mode is confirm, so the frontend asks before anything reaches the
+# gripper. The gripper moves when written to. Keep hands clear.
+
+protocol: modbus
+address: 192.168.0.119
+port: 60000
+slave_id: 65
+framer: rtu
+interval: 0.5
+write_mode: confirm
+
+field_vars:
+  MB.Holding:
+    base_register: 0
+    register_width_bits: 16
+    fields:
+      - 0:
+          - Word0:target force 0.1N
+      - 1:
+          - Word0:target width 0.1mm
+      - 2:
+          - Word0:control - 1 grip, 8 stop, 16 offset grip

@@ -1,0 +1,53 @@
+# OnRobot RG2 / RG6 -- status, read only.
+#
+# Bus settings below are for a gripper on a Dobot flange, reached through the
+# controller's serial gateway on port 60000. That gateway forwards raw bytes,
+# so the frames must be RTU. For a gripper on an OnRobot Compute Box use
+# port 502, framer socket, and slave 66 or 67 depending on the changer side.
+#
+# The flange UART must already be set to 1000000 baud, even parity, 1 stop
+# bit. On a Dobot that is SetTool485(1000000,E,1) over the dashboard, and it
+# does not survive a reboot. At any other line speed the gripper answers
+# nothing at all.
+#
+# Register numbers are OnRobot's own. busfactor doubles them into byte
+# offsets, so register 268 is read at byte 536.
+#
+# The read window stays inside 267..275. Registers 3..257 are not implemented
+# and asking for them fails the whole read.
+
+protocol: modbus
+address: 192.168.0.119
+port: 60000
+slave_id: 65
+framer: rtu
+interval: 0.2
+write_mode: disabled
+
+field_vars:
+  MB.Holding:
+    base_register: 0
+    register_width_bits: 16
+    fields:
+      - 267:
+          - Word0:actual width 0.1mm
+      - 268:
+          # Bit numbers are OnRobot's. Bit 6 latches at power-on and does not
+          # clear until the gripper powers up with every switch released.
+          - Word0.0:busy
+          - Word0.1:grip detected
+          - Word0.2:S1 pushed
+          - Word0.3:S1 trigged - will not move
+          - Word0.4:S2 pushed
+          - Word0.5:S2 trigged - will not move
+          - Word0.6:safety error - a switch was pushed at power on
+      - 275:
+          - Word0:width with offset 0.1mm
+
+# Depth readings live at registers 263 and 264, signed, 0.1mm. Adding them
+# widens the read window to 13 registers. Longer reads across this gateway
+# drop replies more often, so they are left out by default.
+#      - 263:
+#          - Int0:actual depth 0.1mm
+#      - 264:
+#          - Int0:actual relative depth 0.1mm

@@ -1,11 +1,11 @@
-# busfactor — Live industrial protocol monitor (S7 + EtherNet/IP)
+# busfactor — Live industrial protocol monitor (S7 + EtherNet/IP + Modbus)
 
 ![Busfactor terminal](busfactor.png)
 
 
 A modern terminal UI and web dashboard for live-monitoring and writing
-industrial controller data. Supports **Siemens S7** (via python-snap7) and
-**EtherNet/IP** (via python-ethernetip) protocols.
+industrial controller data. Supports **Siemens S7** (via python-snap7),
+**EtherNet/IP** (via python-ethernetip) and **Modbus** (via pymodbus).
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue)
 
@@ -130,6 +130,63 @@ Where `<Assembly>` is `Input`, `Output`, or `Config`.
 | `EIP.Input.Bit0.3:limit_switch` | Input assembly, bit 3 of byte 0 |
 | `EIP.Output.Bit0.0:watchdog` | Output assembly, bit 0 of byte 0 |
 | `EIP.Input.Chars44.32:program` | Input assembly, 32 raw ASCII bytes at offset 44 |
+
+### Modbus variable spec
+
+```
+MB.<Table>.<Type><Offset>[.<Extra>][:Label]
+```
+
+Where `<Table>` is `Holding`, `Input`, `Coil` or `Discrete`.
+
+Offsets are byte offsets, as in every other spec, so **register N is at byte
+N × 2**. Holding register 268 is `MB.Holding.Word536`. Profiles name registers
+directly through `field_vars`, which does that arithmetic (see below).
+
+| Example | Description |
+|---------|-------------|
+| `MB.Holding.Word536:status` | Holding register 268 as a 16-bit word |
+| `MB.Holding.Word536.6:safety` | Bit 6 of holding register 268 |
+| `MB.Input.Int0:temperature` | Input register 0, signed |
+| `MB.Coil.Bit0.3:valve` | Coil 3 |
+| `MB.Discrete.Bit1.0:door` | Discrete input 8 |
+
+Use `Word<offset>.<bit>` for a bit inside a register, not `Bit`. `Bit` indexes
+within one byte, and a Modbus register is two bytes with the high one first —
+so register bit 6 lands in the *second* byte and `Bit536.6` would read the
+wrong end.
+
+Connection settings:
+
+```yaml
+protocol: modbus
+address: 192.168.0.119
+port: 60000        # 502 is the default
+slave_id: 65
+framer: rtu        # socket for ordinary Modbus TCP
+```
+
+`framer: rtu` is for serial gateways that forward raw bytes — a robot flange
+bus, or socat in front of an RS485 adapter. Nothing in that path adds an MBAP
+header, so socket framing connects and then fails every read.
+
+### Device profiles
+
+`profiles/` holds ready-made configs. Each documents the bus settings and the
+register map it expects.
+
+| Profile | Device |
+|---------|--------|
+| `profiles/onrobot-rg-status.yaml` | OnRobot RG2 / RG6 — width and status bits, read only |
+| `profiles/onrobot-rg-command.yaml` | OnRobot RG2 / RG6 — force, width and control, writable |
+
+```bash
+busfactor -c profiles/onrobot-rg-status.yaml
+```
+
+The RG profiles are split because busfactor reads one contiguous window per
+table, and the gripper does not implement registers 3..257. Commands sit at
+0..2 and status at 267..275, so one window cannot hold both.
 
 ### Config files
 
