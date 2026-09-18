@@ -170,6 +170,18 @@ class Connection(ABC):
             self._state = ConnectionState.DISCONNECTED
             self._error = ""
 
+    def abort(self) -> None:
+        """Drop the link on the way out, without waiting for a read in flight.
+
+        disconnect() waits for the lock, so a read that is sitting on its
+        timeout holds up the caller for as long as the device stays silent.
+        Quitting should not wait for an answer nobody is going to use. The
+        default is still disconnect(), which is right for a driver whose read
+        cannot block for long; a driver that can sit on a timeout overrides
+        this and interrupts the request instead.
+        """
+        self.disconnect()
+
     def _record_failure(self, what: str, error: Exception) -> None:
         """Log *error* and put the connection into the ERROR state."""
         log_error(f"{what}: {error}")

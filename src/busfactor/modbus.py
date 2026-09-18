@@ -21,10 +21,17 @@ from __future__ import annotations
 
 import logging
 import re
+import socket
 import time
 from typing import Callable, TypeVar
 
-from .protocols import Connection, ConnectionConfig, DataSource, ReadResult
+from .protocols import (
+    Connection,
+    ConnectionConfig,
+    ConnectionState,
+    DataSource,
+    ReadResult,
+)
 
 log = logging.getLogger(__name__)
 
@@ -154,6 +161,25 @@ class ModbusConnection(Connection):
         log.debug("Disconnecting ...")
         self._cleanup()
         log.debug("Disconnected")
+
+    def abort(self) -> None:
+        """Drop the link now, even with a request waiting for its answer.
+
+        A read blocks in select() until the timeout runs out, three times
+        over for the retries, so a gateway that has gone quiet can hold the
+        lock for several seconds. Shutting the socket down wakes that select()
+        straight away; closing the socket on its own does not, because the
+        thread is already inside the call.
+        """
+        self._state = ConnectionState.DISCONNECTED
+        self._error = ""
+        sock = getattr(self._client, "socket", None)
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass  # Already closed, or never connected.
+        self._close_quietly()
 
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         log.debug("read_source(%s, offset=%s, size=%s)", source, offset, size)

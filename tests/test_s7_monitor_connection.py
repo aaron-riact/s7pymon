@@ -9,6 +9,7 @@ from busfactor.connection import (
 )
 from busfactor.protocols import DataSource
 from busfactor.variable import S7Area
+from tests.fakes import BaseFakeConnection
 
 
 @pytest.fixture
@@ -193,3 +194,14 @@ class TestS7ConnectionWriteSource:
         with pytest.raises(RuntimeError):
             connection.write_source(DataSource("DB210"), 0, bytearray(b"\xff"))
         assert connection.state == ConnectionState.ERROR
+
+
+class TestAbortDefault:
+    """A driver that cannot be interrupted still closes the ordinary way."""
+
+    def test_abort_falls_back_to_disconnect(self):
+        conn = BaseFakeConnection()
+        conn.connect()
+        conn.abort()
+        assert conn.disconnect_calls == 1
+        assert conn.state == ConnectionState.DISCONNECTED

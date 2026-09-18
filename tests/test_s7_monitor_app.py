@@ -572,3 +572,31 @@ class TestPollOverrun:
                 assert not app._read_in_flight
 
         asyncio.run(run())
+
+
+class TestExitClosesTheConnection:
+    """Quitting drops the link through abort(), not disconnect()."""
+
+    def test_unmount_aborts_the_connection(self):
+        class RecordingConnection(BaseFakeConnection):
+            aborts = 0
+
+            def abort(self) -> None:
+                RecordingConnection.aborts += 1
+                super().abort()
+
+        conn = RecordingConnection()
+        app = S7MonitorApp(
+            connection=conn,
+            variables=[S7Variable.parse("DB1.Byte0", label="b0")],
+            read_groups=[ReadGroup(DataSource.s7_db(1), start=0, size=2)],
+            poll_interval=3600,
+        )
+
+        async def run():
+            async with app.run_test():
+                pass
+
+        asyncio.run(run())
+        assert type(conn).aborts == 1
+        assert conn.state == ConnectionState.DISCONNECTED

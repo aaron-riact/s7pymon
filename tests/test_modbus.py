@@ -5,6 +5,8 @@ register addresses and counts that go on the wire — that is where the
 byte-to-register conversion can go wrong.
 """
 
+import socket
+
 import pytest
 
 from busfactor.modbus import (
@@ -36,6 +38,16 @@ class FakeResponse:
         return self._error
 
 
+class FakeSocket:
+    """Only the two calls abort() makes on a pymodbus socket."""
+
+    def __init__(self):
+        self.shutdown_calls: list[int] = []
+
+    def shutdown(self, how):
+        self.shutdown_calls.append(how)
+
+
 class FakeClient:
     """Stands in for pymodbus. Holding/input registers default to address+1."""
 
@@ -55,6 +67,7 @@ class FakeClient:
         # fail_writes mimics the first N writes being rejected.
         self.fail_writes = fail_writes
         self.closed = False
+        self.socket = None
 
     def _limit(self, values):
         if self.drop_first > 0:
@@ -69,10 +82,12 @@ class FakeClient:
         return self._limit(bits)
 
     def connect(self):
+        self.socket = FakeSocket()
         return self.connect_ok
 
     def close(self):
         self.closed = True
+        self.socket = None
 
     def _regs(self, address, count):
         return self._limit(
@@ -436,3 +451,44 @@ class TestRowAddress:
     def test_other_protocols_are_left_alone(self):
         assert format_row_address("EIP.Input", 0) is None
         assert format_row_address("DB210", 0) is None
+
+
+class TestAbort:
+    """Quitting must not wait for a request the gateway is not answering."""
+
+    def test_shuts_the_socket_down_and_closes(self):
+        conn, client = make_connection()
+        conn.connect()
+        sock = client.socket
+        assert sock is not None
+        conn.abort()
+        assert sock.shutdown_calls == [socket.SHUT_RDWR]
+        assert client.closed
+        assert conn.state == ConnectionState.DISCONNECTED
+
+    def test_does_not_wait_for_a_read_in_flight(self):
+        """The lock is held for the whole of a read; abort must not queue behind it."""
+        conn, client = make_connection()
+        conn.connect()
+        with conn._lock:
+            conn.abort()
+        assert client.closed
+        assert conn.state == ConnectionState.DISCONNECTED
+
+    def test_survives_a_connection_that_never_opened(self):
+        conn, _ = make_connection()
+        conn.abort()
+        assert conn.state == ConnectionState.DISCONNECTED
+
+    def test_ignores_a_socket_already_gone(self):
+        conn, client = make_connection()
+        conn.connect()
+
+        def refuse(how):
+            raise OSError("not connected")
+
+        sock = client.socket
+        assert sock is not None
+        sock.shutdown = refuse
+        conn.abort()
+        assert client.closed
