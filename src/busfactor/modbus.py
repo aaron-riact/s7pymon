@@ -110,12 +110,25 @@ class ModbusConnection(Connection):
         super().__init__(config)
         self._client = None
         self._client_factory = client_factory
+        # Counted so a lossy bus is visible in the status bar rather than
+        # only as an occasional pause. Requests are whole transactions, not
+        # attempts, so one request that needed two goes counts once here and
+        # once under resends.
+        self.requests = 0
+        self.resends = 0
+        self.failures = 0
 
     @property
     def status_extra(self) -> dict[str, str]:
         if not self.connected:
             return {}
-        return {"Slave": str(self._config.slave_id), "Framer": self._config.framer}
+        extra = {"Slave": str(self._config.slave_id), "Framer": self._config.framer,
+                 "Req": str(self.requests)}
+        if self.resends:
+            extra["Resent"] = f"{self.resends} ({100 * self.resends / self.requests:.1f}%)"
+        if self.failures:
+            extra["Failed"] = str(self.failures)
+        return extra
 
     def _build_client(self):
         from pymodbus import FramerType
@@ -271,6 +284,25 @@ class ModbusConnection(Connection):
             raise ConnectionError("Not connected")
         return self._client
 
+    @staticmethod
+    def _missing_reply_is_a_connection_error(call):
+        """Run a pymodbus call, turning a missing reply into a ConnectionError.
+
+        A dropped frame reaches us two ways. pymodbus raises ModbusIOException
+        when nothing at all came back, and returns a well-formed but empty
+        response when the framer resynchronised on a partial one. They are the
+        same event, so both take the same path and both get resent.
+
+        The import is local to keep pymodbus out of the module's import time,
+        as connect() does; a caller without it installed still gets the clear
+        ImportError from there.
+        """
+        from pymodbus.exceptions import ModbusIOException
+        try:
+            return call()
+        except ModbusIOException as exc:
+            raise ConnectionError(str(exc)) from exc
+
     def _retry(self, attempt: Callable[[], T]) -> T:
         """Run one request, retrying a dropped reply.
 
@@ -281,14 +313,20 @@ class ModbusConnection(Connection):
         Writes retry as well. A repeated register write carries the same
         values, so re-sending one that was already applied changes nothing.
         """
+        self.requests += 1
         for _ in range(max(1, self._config.retries) - 1):
             try:
                 return attempt()
             except ConnectionError:
                 if not self.connected:
                     raise
+                self.resends += 1
                 time.sleep(RETRY_DELAY_S)
-        return attempt()
+        try:
+            return attempt()
+        except ConnectionError:
+            self.failures += 1
+            raise
 
     def _check(self, response, what: str):
         if response is None or (hasattr(response, "isError") and response.isError()):
@@ -319,7 +357,7 @@ class ModbusConnection(Connection):
             )
             return self._exactly(list(self._check(resp, what).registers), count, what)
 
-        return self._retry(attempt)
+        return self._retry(lambda: self._missing_reply_is_a_connection_error(attempt))
 
     def _client_read_input(self, address: int, count: int) -> list[int]:
         what = f"read input {address}+{count}"
@@ -330,7 +368,7 @@ class ModbusConnection(Connection):
             )
             return self._exactly(list(self._check(resp, what).registers), count, what)
 
-        return self._retry(attempt)
+        return self._retry(lambda: self._missing_reply_is_a_connection_error(attempt))
 
     def _client_read_coils(self, address: int, count: int) -> list[bool]:
         what = f"read coils {address}+{count}"
@@ -341,7 +379,7 @@ class ModbusConnection(Connection):
             )
             return self._exactly(list(self._check(resp, what).bits), count, what)
 
-        return self._retry(attempt)
+        return self._retry(lambda: self._missing_reply_is_a_connection_error(attempt))
 
     def _client_read_discrete(self, address: int, count: int) -> list[bool]:
         what = f"read discrete {address}+{count}"
@@ -352,7 +390,7 @@ class ModbusConnection(Connection):
             )
             return self._exactly(list(self._check(resp, what).bits), count, what)
 
-        return self._retry(attempt)
+        return self._retry(lambda: self._missing_reply_is_a_connection_error(attempt))
 
     def _client_write_registers(self, address: int, values: list[int]) -> None:
         what = f"write registers {address}+{len(values)}"
@@ -363,7 +401,7 @@ class ModbusConnection(Connection):
             )
             return self._check(resp, what)
 
-        self._retry(attempt)
+        self._retry(lambda: self._missing_reply_is_a_connection_error(attempt))
 
     def _client_write_coils(self, address: int, values: list[bool]) -> None:
         what = f"write coils {address}+{len(values)}"
@@ -374,7 +412,7 @@ class ModbusConnection(Connection):
             )
             return self._check(resp, what)
 
-        self._retry(attempt)
+        self._retry(lambda: self._missing_reply_is_a_connection_error(attempt))
 
     # ---------------------------------------------------------------- misc
 

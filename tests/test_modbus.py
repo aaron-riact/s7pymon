@@ -8,6 +8,7 @@ byte-to-register conversion can go wrong.
 import socket
 
 import pytest
+from pymodbus.exceptions import ModbusIOException
 
 from busfactor.modbus import (
     format_row_address,
@@ -52,7 +53,7 @@ class FakeClient:
     """Stands in for pymodbus. Holding/input registers default to address+1."""
 
     def __init__(self, error=False, connect_ok=True, short_to=None, pad_bits=False,
-                 drop_first=0, fail_writes=0):
+                 drop_first=0, fail_writes=0, raise_first=0):
         self.calls: list[tuple] = []
         self.registers: dict[int, int] = {}
         self.coils: dict[int, bool] = {}
@@ -66,8 +67,16 @@ class FakeClient:
         self.drop_first = drop_first
         # fail_writes mimics the first N writes being rejected.
         self.fail_writes = fail_writes
+        # raise_first mimics pymodbus giving up: it raises rather than
+        # returning anything at all.
+        self.raise_first = raise_first
         self.closed = False
         self.socket = None
+
+    def _maybe_raise(self):
+        if self.raise_first > 0:
+            self.raise_first -= 1
+            raise ModbusIOException("No response received after 3 retries")
 
     def _limit(self, values):
         if self.drop_first > 0:
@@ -96,20 +105,24 @@ class FakeClient:
 
     def read_holding_registers(self, address, *, count=1, device_id=1):
         self.calls.append(("read_holding", address, count, device_id))
+        self._maybe_raise()
         if self.error:
             return FakeResponse(error=True)
         return FakeResponse(registers=self._regs(address, count))
 
     def read_input_registers(self, address, *, count=1, device_id=1):
         self.calls.append(("read_input", address, count, device_id))
+        self._maybe_raise()
         return FakeResponse(registers=self._regs(address, count))
 
     def read_coils(self, address, *, count=1, device_id=1):
         self.calls.append(("read_coils", address, count, device_id))
+        self._maybe_raise()
         return FakeResponse(bits=self._bits(address, count))
 
     def read_discrete_inputs(self, address, *, count=1, device_id=1):
         self.calls.append(("read_discrete", address, count, device_id))
+        self._maybe_raise()
         return FakeResponse(bits=self._bits(address, count))
 
     def write_registers(self, address, values, *, device_id=1):
@@ -186,7 +199,8 @@ class TestConnect:
     def test_status_extra_shows_slave_and_framer(self):
         conn, _ = make_connection(slave_id=65, framer="rtu")
         conn.connect()
-        assert conn.status_extra == {"Slave": "65", "Framer": "rtu"}
+        # Counters join it once requests have been made; see TestCounters.
+        assert conn.status_extra == {"Slave": "65", "Framer": "rtu", "Req": "0"}
 
 
 class TestReadRegisters:
@@ -413,6 +427,66 @@ class TestRetry:
         with pytest.raises(ConnectionError, match="write registers"):
             conn.write_source(HOLDING, 0, bytearray(b"\x00\xc8"))
         assert len([c for c in client.calls if c[0] == "write_registers"]) == 3
+
+
+class TestMissingReply:
+    """pymodbus raises when nothing comes back at all. That is the same event
+    as a reply that arrives empty, and it has to be retried the same way --
+    the original tests only covered the empty case, so this one escaped."""
+
+    def test_a_raised_missing_reply_is_retried(self):
+        conn, client = make_connection(FakeClient(raise_first=1))
+        conn.connect()
+        assert len(conn.read_source(HOLDING, 534, 2).data) == 2
+        assert len(client.calls) == 2
+
+    def test_a_reply_that_never_comes_gives_up_as_a_connection_error(self):
+        conn, _ = make_connection(FakeClient(raise_first=99), retries=3)
+        conn.connect()
+        with pytest.raises(ConnectionError, match="No response"):
+            conn.read_source(HOLDING, 534, 2)
+
+    def test_a_raised_missing_reply_counts_as_a_resend(self):
+        conn, _ = make_connection(FakeClient(raise_first=1))
+        conn.connect()
+        conn.read_source(HOLDING, 534, 2)
+        assert conn.requests == 1
+        assert conn.resends == 1
+        assert conn.failures == 0
+
+
+class TestCounters:
+    def test_a_clean_bus_counts_only_requests(self):
+        conn, _ = make_connection()
+        conn.connect()
+        for _ in range(3):
+            conn.read_source(HOLDING, 534, 2)
+        assert (conn.requests, conn.resends, conn.failures) == (3, 0, 0)
+
+    def test_a_giving_up_request_is_counted_once_as_a_failure(self):
+        conn, _ = make_connection(FakeClient(drop_first=99), retries=3)
+        conn.connect()
+        with pytest.raises(ConnectionError):
+            conn.read_source(HOLDING, 534, 2)
+        assert conn.requests == 1
+        assert conn.resends == 2      # two retries before the last attempt
+        assert conn.failures == 1
+
+    def test_the_status_bar_hides_counters_that_are_zero(self):
+        conn, _ = make_connection(slave_id=67, framer="rtu")
+        conn.connect()
+        conn.read_source(HOLDING, 534, 2)
+        assert conn.status_extra == {"Slave": "67", "Framer": "rtu", "Req": "1"}
+
+    def test_the_status_bar_shows_resends_with_a_rate(self):
+        conn, _ = make_connection(FakeClient(drop_first=1), slave_id=67, framer="rtu")
+        conn.connect()
+        conn.read_source(HOLDING, 534, 2)
+        assert conn.status_extra["Resent"] == "1 (100.0%)"
+
+    def test_the_status_bar_is_empty_before_connecting(self):
+        conn, _ = make_connection()
+        assert conn.status_extra == {}
 
 
 class TestSourceResolution:

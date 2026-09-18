@@ -39,8 +39,12 @@ class TestOnRobotStatusProfile:
     def test_bus_settings_match_the_dobot_flange_gateway(self):
         config = load("onrobot-rg-status.yaml").connection.config
         assert config.tcp_port == 60000
-        assert config.slave_id == 65
         assert config.framer == "rtu"
+
+    def test_the_slave_id_is_one_a_changer_can_give(self):
+        # The id belongs to the changer port, not the gripper: 65 on a bare
+        # flange or single changer, 66 or 67 for the two sides of a dual one.
+        assert load("onrobot-rg-status.yaml").connection.config.slave_id in (65, 66, 67)
 
     def test_is_read_only(self):
         assert load("onrobot-rg-status.yaml").write_mode == WriteMode.DISABLED
@@ -97,9 +101,9 @@ class TestOnRobot3FG15StatusProfile:
     def test_shares_the_flange_bus_settings_with_the_rg(self):
         three = load("onrobot-3fg15-status.yaml").connection.config
         rg = load("onrobot-rg-status.yaml").connection.config
-        # The slave id is the flange tool address, not the gripper model.
-        assert (three.tcp_port, three.slave_id, three.framer) == (
-            rg.tcp_port, rg.slave_id, rg.framer)
+        # Port and framing are properties of the gateway, so they match. The
+        # slave id is not: it names the changer port each tool is plugged into.
+        assert (three.tcp_port, three.framer) == (rg.tcp_port, rg.framer)
 
     def test_is_read_only(self):
         assert load("onrobot-3fg15-status.yaml").write_mode == WriteMode.DISABLED
