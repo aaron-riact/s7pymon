@@ -728,6 +728,7 @@ class S7MonitorApp(App):
         self._previous_values: dict[str, str] = {}
         self._poll_count = 0
         self._poll_timer = None
+        self._read_in_flight = False
         self._row_keys: dict[int, str] = {}
         self._row_key_to_var: dict = {}
         self._previous_hex_data: dict[str, bytearray] = {}
@@ -866,15 +867,23 @@ class S7MonitorApp(App):
         self._poll_timer = self.set_interval(self._poll_interval, self._poll_tick)
 
     def _poll_tick(self) -> None:
-        """Called each poll interval to read data."""
-        if self.paused:
+        """Called each poll interval to read data.
+
+        A read that outlasts the interval skips the ticks it overruns. Queuing
+        them would stack up worker threads that all wait on the same
+        connection, and each one reads what the read in flight is about to
+        report anyway. The backlog also has to drain before the app can exit.
+        """
+        if self.paused or self._read_in_flight:
             return
+        self._read_in_flight = True
         self._do_read()
 
     @work(thread=True)
     def _do_read(self) -> None:
         """Read all area groups in a worker thread."""
         if not self._connection.connected:
+            self._read_in_flight = False
             return
         try:
             # Snapshot previous data before I/O — thread-safe copy of references
@@ -918,6 +927,8 @@ class S7MonitorApp(App):
             log = self.query_one("#log-panel", RichLog)
             self.call_from_thread(log.write, f"[red]Read error: {e}[/red]")
             self.call_from_thread(self._update_connection_state)
+        finally:
+            self._read_in_flight = False
 
     def trigger_pulse(self, target: str) -> None:
         if self._rules_engine is None:

@@ -1,6 +1,7 @@
 """Tests for the S7 Monitor TUI app components."""
 
 import asyncio
+import threading
 
 import pytest
 from rich.text import Text
@@ -8,7 +9,7 @@ from textual.widgets import DataTable
 
 from busfactor.app import HexDumpDisplay, S7MonitorApp, format_hex_dump
 from busfactor.engine import ReadGroup, WriteMode
-from busfactor.protocols import DataSource
+from busfactor.protocols import ConnectionState, DataSource
 from busfactor.variable import S7Area, DataType, S7Variable
 from tests.fakes import BaseFakeConnection
 
@@ -486,5 +487,88 @@ class TestRowKeyLookup:
                 # After FLASH_DURATION unchanged cycles, flash must be cleared
                 cell2 = table.get_cell(row_key, app.COL_VALUE)
                 assert not isinstance(cell2, Text)
+
+        asyncio.run(run())
+
+
+class TestPollOverrun:
+    """Poll ticks that arrive during a read are dropped, not queued."""
+
+    @staticmethod
+    def _blocking_app(release: threading.Event):
+        class BlockingConnection(BaseFakeConnection):
+            reads = 0
+
+            def read_source(self, source: DataSource, offset: int, size: int):
+                BlockingConnection.reads += 1
+                release.wait(5)
+                return super().read_source(source, offset, size)
+
+        conn = BlockingConnection()
+        app = S7MonitorApp(
+            connection=conn,
+            variables=[S7Variable.parse("DB1.Byte0", label="b0")],
+            read_groups=[ReadGroup(DataSource.s7_db(1), start=0, size=2)],
+            poll_interval=3600,
+        )
+        return app, conn
+
+    @staticmethod
+    async def _wait_for_read(conn, count: int) -> None:
+        for _ in range(500):
+            if type(conn).reads >= count:
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError(f"read {count} never started")
+
+    def test_tick_during_read_starts_no_second_read(self):
+        release = threading.Event()
+        app, conn = self._blocking_app(release)
+
+        async def run():
+            async with app.run_test() as pilot:
+                app._poll_tick()
+                await self._wait_for_read(conn, 1)
+                app._poll_tick()
+                app._poll_tick()
+                release.set()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                assert type(conn).reads == 1
+                assert not app._read_in_flight
+
+        asyncio.run(run())
+
+    def test_next_tick_reads_once_the_last_one_finished(self):
+        release = threading.Event()
+        release.set()
+        app, conn = self._blocking_app(release)
+
+        async def run():
+            async with app.run_test() as pilot:
+                app._poll_tick()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                app._poll_tick()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                assert type(conn).reads == 2
+
+        asyncio.run(run())
+
+    def test_disconnected_tick_leaves_the_flag_clear(self):
+        """The early return in _do_read must not wedge polling off."""
+        release = threading.Event()
+        release.set()
+        app, conn = self._blocking_app(release)
+
+        async def run():
+            async with app.run_test() as pilot:
+                conn.state = ConnectionState.DISCONNECTED
+                app._poll_tick()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                assert type(conn).reads == 0
+                assert not app._read_in_flight
 
         asyncio.run(run())
