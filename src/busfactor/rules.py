@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from collections.abc import Sequence
 
 from .protocols import Connection
-from .variable import DataType, Variable
+from .variable import DataType, Variable, encode_for_write
 
 log = logging.getLogger(__name__)
 
@@ -109,21 +109,6 @@ class RulesEngine:
             elif isinstance(rule, PulseRule):
                 self._apply_pulse(state, connection)
 
-    def _encode_follow(
-        self,
-        target_var: Variable,
-        connection: Connection,
-        parsed: bool | int | float | str,
-    ) -> bytearray | None:
-        if target_var.type == DataType.BIT:
-            if not isinstance(parsed, bool):
-                return None
-            current = connection.read_source(
-                target_var.source, target_var.offset, 1
-            )
-            return target_var.encode_bit(current.data[0], parsed)
-        return target_var.encode(parsed)
-
     def _apply_follow(
         self,
         rule: FollowRule,
@@ -140,9 +125,7 @@ class RulesEngine:
         parsed = target_var.parse_input(formatted)
         if rule.inverted and target_var.type == DataType.BIT:
             parsed = not parsed
-        encoded = self._encode_follow(target_var, connection, parsed)
-        if encoded is None:
-            return
+        encoded = encode_for_write(target_var, parsed, connection)
         if rule.delay_ms > 0:
             # Re-arm only when the value changed, or an unchanged input would
             # push the write back forever.

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Union
 
-from .protocols import DataSource
+from .protocols import Connection, DataSource
 
 
 class S7Area(Enum):
@@ -617,3 +617,20 @@ def extract_value(
             f"not within read range (start={data_start}, size={len(data)})"
         )
     return variable.decode(data[local_offset : local_offset + variable.byte_size])
+
+
+def encode_for_write(
+    var: Variable, value: Union[int, float, bool, str], connection: Connection
+) -> bytearray:
+    """The bytes to write so that ``var`` reads back as ``value``.
+
+    A Bit variable owns one bit of its byte, so the byte is read from the
+    connection first and only that bit is changed. Every other type encodes
+    to a whole value.
+    """
+    if var.type == DataType.BIT:
+        if not isinstance(value, bool):
+            raise TypeError("Bit writes require a boolean value")
+        current = connection.read_source(var.source, var.offset, 1)
+        return var.encode_bit(current.data[0], value)
+    return var.encode(value)

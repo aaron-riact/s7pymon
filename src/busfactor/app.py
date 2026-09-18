@@ -37,7 +37,7 @@ from .errors import log_error
 from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
 from .modbus import format_row_address
 from .rules import RulesEngine
-from .variable import DataType, Variable, compute_read_range, extract_value
+from .variable import DataType, Variable, compute_read_range, encode_for_write, extract_value
 
 __all__ = ["S7MonitorApp", "WriteMode", "format_hex_dump", "ReadGroup"]
 
@@ -1139,15 +1139,7 @@ class S7MonitorApp(App):
         log = self.query_one("#log-panel", RichLog)
         try:
             parsed = var.parse_input(text)
-
-            if var.type == DataType.BIT:
-                if not isinstance(parsed, bool):
-                    raise TypeError("Bit writes require a boolean value")
-                result = self._connection.read_source(var.source, var.offset, 1)
-                encoded = var.encode_bit(result.data[0], parsed)
-            else:
-                encoded = var.encode(parsed)
-
+            encoded = encode_for_write(var, parsed, self._connection)
             pending = PendingWrite(
                 description=f"Set {var.display_name} = {parsed}",
                 source=var.source,
@@ -1257,15 +1249,7 @@ class S7MonitorApp(App):
                 var = Variable.parse(parts[1])
                 value_text = " ".join(parts[2:])
                 parsed = var.parse_input(value_text)
-
-                if var.type == DataType.BIT:
-                    if not isinstance(parsed, bool):
-                        raise TypeError("Bit writes require a boolean value")
-                    result = self._connection.read_source(var.source, var.offset, 1)
-                    encoded = var.encode_bit(result.data[0], parsed)
-                else:
-                    encoded = var.encode(parsed)
-
+                encoded = encode_for_write(var, parsed, self._connection)
                 pending = PendingWrite(
                     description=f"Set {var.spec} = {parsed}",
                     source=var.source,

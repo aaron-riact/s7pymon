@@ -24,7 +24,7 @@ from .errors import log_error
 from .protocols import Connection, ConnectionState, DataSource
 from .logging import DataLogger, LogEntry
 from .rules import RulesEngine
-from .variable import DataType, Variable, extract_value
+from .variable import DataType, Variable, encode_for_write, extract_value
 
 Value = Union[int, float, bool, str]
 
@@ -451,13 +451,7 @@ class MonitorEngine:
 
     def _write(self, var: Variable, text: str) -> WriteResult:
         parsed = var.parse_input(text)
-        if var.type == DataType.BIT:
-            if not isinstance(parsed, bool):
-                raise TypeError("Bit writes require a boolean value")
-            current = self._connection.read_source(var.source, var.offset, 1)
-            encoded = var.encode_bit(current.data[0], parsed)
-        else:
-            encoded = var.encode(parsed)
+        encoded = encode_for_write(var, parsed, self._connection)
         self._connection.write_source(var.source, var.offset, encoded)
         return WriteResult(
             spec=var.spec,
