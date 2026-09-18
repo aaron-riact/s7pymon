@@ -1,19 +1,25 @@
-# OnRobot 3FG15 -- status, read only.
+# OnRobot 3FG15 -- status and finger setup, read only.
 #
-# Same bus as the RG profiles: a gripper on a Dobot flange, reached through
-# the controller's serial gateway on port 60000, RTU frames, slave 65. The
-# slave id is the flange tool address, not the gripper model, so it does not
-# change when you swap an RG for a 3FG15.
+# Same bus as the other OnRobot profiles: a gripper on a Dobot flange,
+# reached through the controller's serial gateway on port 60000, RTU frames,
+# slave 65. Slave 65 is the flange tool address, not the gripper model, so it
+# does not change when you swap grippers.
 #
 # The flange UART must already be at 1000000 baud, even parity, 1 stop bit.
 # On a Dobot that is SetTool485(1000000,E,1), and it does not survive a
 # reboot.
 #
-# Register numbers are OnRobot's own. Values below were read off a real
-# 3FG15 on 2026-09-18.
+# ONE CLIENT AT A TIME. The gateway does not arbitrate between TCP clients.
+# Two of them put frames on the same serial bus and each can pick up the
+# other's replies, which reads as dropped and shifted registers rather than
+# as a conflict.
 #
-# The window is registers 256..258. OnRobot's own plugin reads exactly this
-# block, and nothing between 259 and 512 answers reliably.
+# Register names are OnRobot's, via the ROS 2 driver at
+# github.com/gabrinovas/OnRobot_ROS2_Driver (ThreeFG.hpp), and agree with
+# riact's tfg driver and OnRobot's own Dobot plugin. Values in the comments
+# were read off a real 3FG15 on 2026-09-18.
+#
+# The window is registers 256..275, which read 20/20 clean on the bench.
 
 protocol: modbus
 address: 192.168.0.119
@@ -30,26 +36,41 @@ field_vars:
     register_width_bits: 16
     fields:
       - 256:
-          # Only the low four bits are used. Bit 0 is the one the plugin
-          # polls after a move; it waits for it to clear.
+          # Only the low four bits are used. The plugin polls bit 0 after a
+          # move and waits for it to clear, 50ms apart, 15s timeout.
           - Word0.0:busy
           - Word0.1:grip detected
           - Word0.2:force grip detected
           - Word0.3:calibration ok
       - 257:
+          # Diameter at the finger centres, ignoring the fingertip offset.
           - Word0:raw diameter 0.1mm
       - 258:
-          # Signed: the fingertip offset can push this below zero.
-          - Int0:diameter 0.1mm
+          # The one to read as the workpiece diameter. Signed, because the
+          # fingertip offset can drive it below zero.
+          - Int0:diameter with offset 0.1mm
+      - 259:
+          # Tenths of a percent of maximum force, not newtons. The ROS driver
+          # converts with reg / 10 / 100 * 140 N.
+          - Word0:applied force 0.1% of max
+      - 270:
+          - Word0:finger length 0.1mm
+      - 272:
+          - Word0:finger position - 1 small, 2 medium, 3 large
+      - 273:
+          - Word0:fingertip offset 0.01mm
+      - 275:
+          - Word0:actual width with offset 0.1mm
 
-# Everything below sits outside the window above and needs its own profile,
-# because busfactor reads one contiguous block per table.
+# Registers inside this window that no source names, with values read on the
+# bench. Left undecoded rather than guessed at:
+#   261 = 2437   riact calls this finger angle, privately
+#   276 = 1390   277 = 390   278 = 1590   279 = 482   280 = 682
 #
-# Finger setup, registers 270..273:
-#   270  finger length 0.1mm          read 490 = 49.0 mm
-#   272  finger position 1,2,3        read 2 = medium
-#   273  fingertip offset 0.01mm      read 500 = 5.00 mm
-#
-# Diameter limits for the current finger setup, registers 513..514:
-#   513  minimum diameter 0.1mm       read 290 = 29.0 mm
-#   514  maximum diameter 0.1mm       read 1490 = 149.0 mm
+# Outside this window, needing their own read:
+#   513  minimum diameter 0.1mm     read 290 = 29.0 mm
+#   514  maximum diameter 0.1mm     read 1490 = 149.0 mm
+#   1025 configured finger length   read 490
+#   1027 configured finger position read 2
+#   1028 configured fingertip offset read 500
+#   1030 maximum force N            read 140, matching the driver's constant

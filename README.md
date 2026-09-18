@@ -167,9 +167,15 @@ framer: rtu        # socket for ordinary Modbus TCP
 retries: 3         # per request; 1 disables
 ```
 
-Serial gateways drop replies. pymodbus returns those as a well-formed but
-empty response rather than an error, so its own retry never runs — busfactor
-retries the request itself, three times, 20 ms apart.
+**One client at a time.** A serial gateway does not arbitrate between TCP
+clients. Two of them put frames on the same serial bus and each can pick up
+the other's replies, which shows up as dropped reads and registers shifted by
+one — not as an obvious conflict. Measured on a Dobot flange: a 25-register
+read was 20/20 clean alone, and unreliable with a second client polling.
+
+Replies do also go missing on their own. pymodbus returns those as a
+well-formed but empty response rather than an error, so its own retry never
+runs — busfactor retries the request itself, three times, 20 ms apart.
 
 `framer: rtu` is for serial gateways that forward raw bytes — a robot flange
 bus, or socat in front of an RS485 adapter. Nothing in that path adds an MBAP
@@ -184,7 +190,7 @@ register map it expects.
 |---------|--------|
 | `profiles/onrobot-rg-status.yaml` | OnRobot RG2 / RG6 — width and status bits, read only |
 | `profiles/onrobot-rg-command.yaml` | OnRobot RG2 / RG6 — force, width and control, writable |
-| `profiles/onrobot-3fg15-status.yaml` | OnRobot 3FG15 — diameter and status bits, read only |
+| `profiles/onrobot-3fg15-status.yaml` | OnRobot 3FG15 — diameter, applied force, finger setup and status bits, read only |
 | `profiles/onrobot-3fg15-command.yaml` | OnRobot 3FG15 — force, diameter, grip type and control, writable |
 
 ```bash

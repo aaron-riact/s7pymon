@@ -104,16 +104,25 @@ class TestOnRobot3FG15StatusProfile:
     def test_is_read_only(self):
         assert load("onrobot-3fg15-status.yaml").write_mode == WriteMode.DISABLED
 
-    def test_window_is_the_block_the_plugin_reads(self):
+    def test_window_reaches_the_finger_setup_registers(self):
         group = load("onrobot-3fg15-status.yaml").read_groups[0]
-        # Registers 256..258, as bytes.
+        # Registers 256..275, as bytes. Measured 20/20 clean on the bench.
         assert group.start == 512
-        assert group.size == 6
+        assert group.size == 40
 
     def test_status_bits_are_named(self):
         labels = {v.label for v in load("onrobot-3fg15-status.yaml").variables}
         assert labels >= {"busy", "grip detected", "force grip detected",
                           "calibration ok"}
+
+    def test_finger_setup_registers_are_included(self):
+        variables = modbus_variables("onrobot-3fg15-status.yaml")
+        by_register = {v.register: v.label or "" for v in variables}
+        assert by_register[259].startswith("applied force")
+        assert by_register[270].startswith("finger length")
+        assert by_register[272].startswith("finger position")
+        assert by_register[273].startswith("fingertip offset")
+        assert by_register[275].startswith("actual width with offset")
 
     def test_busy_is_bit_0_of_register_256(self):
         variables = modbus_variables("onrobot-3fg15-status.yaml")
@@ -123,7 +132,8 @@ class TestOnRobot3FG15StatusProfile:
 
     def test_diameter_is_signed(self):
         variables = modbus_variables("onrobot-3fg15-status.yaml")
-        diameter = next(v for v in variables if v.label == "diameter 0.1mm")
+        diameter = next(v for v in variables
+                        if v.label == "diameter with offset 0.1mm")
         assert diameter.register == 258
         # The fingertip offset can drive it below zero.
         assert diameter.decode(bytearray([0xFF, 0xFF])) == -1
