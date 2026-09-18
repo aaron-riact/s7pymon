@@ -261,31 +261,50 @@ class ModbusConnection(Connection):
             raise ConnectionError(f"Modbus {what} failed: {response}")
         return response
 
+    @staticmethod
+    def _exactly(values: list, count: int, what: str) -> list:
+        """Take ``count`` values, or fail if the reply was short.
+
+        Serial gateways drop replies. Truncating quietly would hand the
+        decoder a short buffer, and the variables falling off the end would
+        each fail separately with an error naming the wrong cause. Bit reads
+        come back padded to a whole byte, so a longer reply is normal.
+        """
+        if len(values) < count:
+            raise ConnectionError(
+                f"Modbus {what} returned {len(values)} of {count} values"
+            )
+        return values[:count]
+
     def _client_read_holding(self, address: int, count: int) -> list[int]:
         client = self._require_client()
+        what = f"read holding {address}+{count}"
         resp = client.read_holding_registers(
             address, count=count, device_id=self._config.slave_id
         )
-        return list(self._check(resp, f"read holding {address}+{count}").registers)
+        return self._exactly(list(self._check(resp, what).registers), count, what)
 
     def _client_read_input(self, address: int, count: int) -> list[int]:
         client = self._require_client()
+        what = f"read input {address}+{count}"
         resp = client.read_input_registers(
             address, count=count, device_id=self._config.slave_id
         )
-        return list(self._check(resp, f"read input {address}+{count}").registers)
+        return self._exactly(list(self._check(resp, what).registers), count, what)
 
     def _client_read_coils(self, address: int, count: int) -> list[bool]:
         client = self._require_client()
+        what = f"read coils {address}+{count}"
         resp = client.read_coils(address, count=count, device_id=self._config.slave_id)
-        return list(self._check(resp, f"read coils {address}+{count}").bits)[:count]
+        return self._exactly(list(self._check(resp, what).bits), count, what)
 
     def _client_read_discrete(self, address: int, count: int) -> list[bool]:
         client = self._require_client()
+        what = f"read discrete {address}+{count}"
         resp = client.read_discrete_inputs(
             address, count=count, device_id=self._config.slave_id
         )
-        return list(self._check(resp, f"read discrete {address}+{count}").bits)[:count]
+        return self._exactly(list(self._check(resp, what).bits), count, what)
 
     def _client_write_registers(self, address: int, values: list[int]) -> None:
         client = self._require_client()

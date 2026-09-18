@@ -38,13 +38,26 @@ class FakeResponse:
 class FakeClient:
     """Stands in for pymodbus. Holding/input registers default to address+1."""
 
-    def __init__(self, error=False, connect_ok=True):
+    def __init__(self, error=False, connect_ok=True, short_to=None, pad_bits=False):
         self.calls: list[tuple] = []
         self.registers: dict[int, int] = {}
         self.coils: dict[int, bool] = {}
         self.error = error
         self.connect_ok = connect_ok
+        # short_to mimics a gateway that drops part of a reply.
+        self.short_to = short_to
+        # pad_bits mimics pymodbus padding a bit reply out to a whole byte.
+        self.pad_bits = pad_bits
         self.closed = False
+
+    def _limit(self, values):
+        return values if self.short_to is None else values[: self.short_to]
+
+    def _bits(self, address, count):
+        bits = [self.coils.get(address + i, False) for i in range(count)]
+        if self.pad_bits and count % 8:
+            bits += [False] * (8 - count % 8)
+        return self._limit(bits)
 
     def connect(self):
         return self.connect_ok
@@ -53,7 +66,9 @@ class FakeClient:
         self.closed = True
 
     def _regs(self, address, count):
-        return [self.registers.get(address + i, address + i + 1) for i in range(count)]
+        return self._limit(
+            [self.registers.get(address + i, address + i + 1) for i in range(count)]
+        )
 
     def read_holding_registers(self, address, *, count=1, device_id=1):
         self.calls.append(("read_holding", address, count, device_id))
@@ -67,11 +82,11 @@ class FakeClient:
 
     def read_coils(self, address, *, count=1, device_id=1):
         self.calls.append(("read_coils", address, count, device_id))
-        return FakeResponse(bits=[self.coils.get(address + i, False) for i in range(count)])
+        return FakeResponse(bits=self._bits(address, count))
 
     def read_discrete_inputs(self, address, *, count=1, device_id=1):
         self.calls.append(("read_discrete", address, count, device_id))
-        return FakeResponse(bits=[self.coils.get(address + i, False) for i in range(count)])
+        return FakeResponse(bits=self._bits(address, count))
 
     def write_registers(self, address, values, *, device_id=1):
         self.calls.append(("write_registers", address, list(values), device_id))
@@ -299,6 +314,34 @@ class TestWrite:
         conn.connect()
         conn.write_source(HOLDING, 0, bytearray())
         assert client.calls == []
+
+
+class TestShortReplies:
+    def test_short_register_reply_raises(self):
+        conn, _ = make_connection(FakeClient(short_to=1))
+        conn.connect()
+        with pytest.raises(ConnectionError, match="returned 1 of 2 values"):
+            conn.read_source(HOLDING, 0, 4)
+
+    def test_empty_register_reply_raises(self):
+        conn, _ = make_connection(FakeClient(short_to=0))
+        conn.connect()
+        with pytest.raises(ConnectionError, match="returned 0 of 1 values"):
+            conn.read_source(HOLDING, 534, 2)
+
+    def test_short_coil_reply_raises(self):
+        conn, _ = make_connection(FakeClient(short_to=1))
+        conn.connect()
+        with pytest.raises(ConnectionError, match="returned 1 of 8 values"):
+            conn.read_source(COIL, 0, 1)
+
+    def test_padded_bit_reply_is_accepted(self):
+        conn, client = make_connection(FakeClient(pad_bits=True))
+        conn.connect()
+        client.coils[0] = True
+        client.coils[3] = True
+        # A 4-coil read comes back padded to a whole byte. That is not short.
+        assert bytes(conn.read_source(COIL, 0, 1).data) == b"\x09"
 
 
 class TestSourceResolution:
