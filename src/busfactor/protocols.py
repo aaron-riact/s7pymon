@@ -36,6 +36,9 @@ class ConnectionConfig:
     input_size: int = 32
     output_size: int = 32
     rpi_ms: int = 50
+    # Modbus-specific
+    slave_id: int = 1
+    framer: str = "socket"  # "socket" = Modbus TCP, "rtu" = RTU frames over TCP
 
     @property
     def display(self) -> str:
@@ -46,6 +49,11 @@ class ConnectionConfig:
                 f"{self.address}:{self.tcp_port} "
                 f"in={self.input_assembly} out={self.output_assembly} "
                 f"rpi={self.rpi_ms}ms"
+            )
+        if self.protocol == "modbus":
+            return (
+                f"{self.address}:{self.tcp_port} "
+                f"slave={self.slave_id} framer={self.framer}"
             )
         return f"{self.address}:{self.tcp_port}"
 
