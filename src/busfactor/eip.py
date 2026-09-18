@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
 from typing import cast
 
 from .engine import ReadGroup
-from .errors import log_error
-from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
+from .protocols import Connection, ConnectionConfig, DataSource, ReadResult
 
 log = logging.getLogger(__name__)
 
@@ -26,10 +24,7 @@ class EIPConnection(Connection):
     protocol = "eip"
 
     def __init__(self, config: ConnectionConfig):
-        self._config = config
-        self._state = ConnectionState.DISCONNECTED
-        self._error: str = ""
-        self._lock = threading.Lock()
+        super().__init__(config)
         self._eip = None  # ethernetip.EtherNetIP
         self._conn = None  # ethernetip.EtherNetIPExpConnection
         self._input_bits: list[bool] = []
@@ -37,92 +32,64 @@ class EIPConnection(Connection):
         self._input_size: int = 0
         self._output_size: int = 0
 
-    @property
-    def state(self) -> ConnectionState:
-        return self._state
+    def _open(self) -> None:
+        log.debug("Connecting to %s:%s ...", self._config.address, self._config.tcp_port)
+        try:
+            import ethernetip
+        except ImportError:
+            raise ConnectionError("ethernetip library not available") from None
 
-    @property
-    def connected(self) -> bool:
-        return self._state == ConnectionState.CONNECTED
+        eip = ethernetip.EtherNetIP(self._config.address)
+        setattr(ethernetip.config, "IO_SOCKET_SELECT_TIMEOUT", 0.5)
+        conn = eip.explicit_conn()
+        conn.registerSession()
 
-    @property
-    def error(self) -> str:
-        return self._error
+        self._input_size = self._config.input_size
+        self._output_size = self._config.output_size
 
-    @property
-    def config(self) -> ConnectionConfig:
-        return self._config
+        log.debug("Registering Input assembly %s (%s bytes)", self._config.input_assembly, self._input_size)
+        input_bits = eip.registerAssembly(
+            ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT,
+            self._input_size,
+            self._config.input_assembly,
+            conn,
+        )
+        log.debug("Registering Output assembly %s (%s bytes)", self._config.output_assembly, self._output_size)
+        output_bits = eip.registerAssembly(
+            ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT,
+            self._output_size,
+            self._config.output_assembly,
+            conn,
+        )
 
-    def connect(self) -> None:
-        with self._lock:
-            self._state = ConnectionState.CONNECTING
-            self._error = ""
-            log.debug("Connecting to %s:%s ...", self._config.address, self._config.tcp_port)
-            try:
-                import ethernetip
+        eip.startIO(udp_port=0)
+        log.debug(
+            "Forward open: in=%s out=%s rpi=%sms",
+            self._config.input_assembly, self._config.output_assembly, self._config.rpi_ms,
+        )
+        result = conn.sendFwdOpenReq(
+            inputinst=self._config.input_assembly,
+            outputinst=self._config.output_assembly,
+            configinst=self._config.config_assembly,
+            torpi=self._config.rpi_ms,
+            otrpi=self._config.rpi_ms,
+            originator_udp_port=eip.originator_udp_port,
+        )
+        if result != 0:
+            raise ConnectionError(
+                f"Forward Open failed with code {result}"
+            )
+        conn.produce()
 
-                eip = ethernetip.EtherNetIP(self._config.address)
-                setattr(ethernetip.config, "IO_SOCKET_SELECT_TIMEOUT", 0.5)
-                conn = eip.explicit_conn()
-                conn.registerSession()
-
-                self._input_size = self._config.input_size
-                self._output_size = self._config.output_size
-
-                log.debug("Registering Input assembly %s (%s bytes)", self._config.input_assembly, self._input_size)
-                input_bits = eip.registerAssembly(
-                    ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT,
-                    self._input_size,
-                    self._config.input_assembly,
-                    conn,
-                )
-                log.debug("Registering Output assembly %s (%s bytes)", self._config.output_assembly, self._output_size)
-                output_bits = eip.registerAssembly(
-                    ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT,
-                    self._output_size,
-                    self._config.output_assembly,
-                    conn,
-                )
-
-                eip.startIO(udp_port=0)
-                log.debug(
-                    "Forward open: in=%s out=%s rpi=%sms",
-                    self._config.input_assembly, self._config.output_assembly, self._config.rpi_ms,
-                )
-                result = conn.sendFwdOpenReq(
-                    inputinst=self._config.input_assembly,
-                    outputinst=self._config.output_assembly,
-                    configinst=self._config.config_assembly,
-                    torpi=self._config.rpi_ms,
-                    otrpi=self._config.rpi_ms,
-                    originator_udp_port=eip.originator_udp_port,
-                )
-                if result != 0:
-                    raise ConnectionError(
-                        f"Forward Open failed with code {result}"
-                    )
-                conn.produce()
-
-                self._eip = eip
-                self._conn = conn
-                if input_bits is None:
-                    raise ConnectionError("Input assembly registration returned None")
-                if output_bits is None:
-                    raise ConnectionError("Output assembly registration returned None")
-                self._input_bits = cast("list[bool]", input_bits)
-                self._output_bits = cast("list[bool]", output_bits)
-                self._state = ConnectionState.CONNECTED
-                log.debug("Connected OK")
-            except ImportError:
-                self._state = ConnectionState.ERROR
-                self._error = "ethernetip library not available"
-                raise ConnectionError("ethernetip library not available") from None
-            except Exception as e:
-                log_error(f"EIP connection failed: {e}")
-                self._state = ConnectionState.ERROR
-                self._error = str(e)
-                self._cleanup()
-                raise
+        self._eip = eip
+        self._conn = conn
+        if input_bits is None:
+            raise ConnectionError("Input assembly registration returned None")
+        if output_bits is None:
+            raise ConnectionError("Output assembly registration returned None")
+        self._input_bits = cast("list[bool]", input_bits)
+        self._output_bits = cast("list[bool]", output_bits)
+        log.debug("Connected OK")
 
     @property
     def status_extra(self) -> dict[str, str]:
@@ -135,13 +102,10 @@ class EIPConnection(Connection):
             extra["State"] = "Run"
         return extra
 
-    def disconnect(self) -> None:
+    def _close(self) -> None:
         log.debug("Disconnecting ...")
-        with self._lock:
-            self._cleanup()
-            self._state = ConnectionState.DISCONNECTED
-            self._error = ""
-            log.debug("Disconnected")
+        self._cleanup()
+        log.debug("Disconnected")
 
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         log.debug("read_source(%s, offset=%s, size=%s)", source, offset, size)

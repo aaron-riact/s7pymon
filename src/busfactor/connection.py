@@ -7,12 +7,10 @@ DB, EB, AB, MB, CT, and TM areas, with connection state tracking.
 from __future__ import annotations
 
 import re
-from threading import Lock
 from typing import Protocol
 
 import snap7
 
-from .errors import log_error
 from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
 from .variable import S7Area
 
@@ -64,61 +62,24 @@ class S7Connection(Connection):
     protocol = "s7"
 
     def __init__(self, config: ConnectionConfig, client: S7ClientProtocol | None = None):
-        self._config = config
+        super().__init__(config)
         self._client = client or snap7.Client()
-        self._state = ConnectionState.DISCONNECTED
-        self._error: str = ""
-        self._lock = Lock()
 
-    @property
-    def config(self) -> ConnectionConfig:
-        return self._config
+    def _open(self) -> None:
+        self._client.set_param(snap7.type.Parameter.SendTimeout, self._config.timeout_ms)
+        self._client.set_param(snap7.type.Parameter.PingTimeout, self._config.timeout_ms)
+        self._client.set_param(snap7.type.Parameter.RecvTimeout, self._config.timeout_ms)
+        self._client.connect(
+            self._config.address,
+            self._config.rack,
+            self._config.slot,
+            tcp_port=self._config.tcp_port,
+        )
+        if not self._client.get_connected():
+            raise ConnectionError("connect() returned but get_connected() is False")
 
-    @property
-    def state(self) -> ConnectionState:
-        return self._state
-
-    @property
-    def error(self) -> str:
-        return self._error
-
-    @property
-    def connected(self) -> bool:
-        return self._state == ConnectionState.CONNECTED
-
-    def connect(self) -> None:
-        """Establish connection to the S7 PLC."""
-        with self._lock:
-            self._state = ConnectionState.CONNECTING
-            self._error = ""
-            try:
-                self._client.set_param(snap7.type.Parameter.SendTimeout, self._config.timeout_ms)
-                self._client.set_param(snap7.type.Parameter.PingTimeout, self._config.timeout_ms)
-                self._client.set_param(snap7.type.Parameter.RecvTimeout, self._config.timeout_ms)
-                self._client.connect(
-                    self._config.address,
-                    self._config.rack,
-                    self._config.slot,
-                    tcp_port=self._config.tcp_port,
-                )
-                if not self._client.get_connected():
-                    raise ConnectionError("connect() returned but get_connected() is False")
-                self._state = ConnectionState.CONNECTED
-            except Exception as e:
-                log_error(f"S7 connection failed to {self._config.address}:{self._config.tcp_port}: {e}")
-                self._state = ConnectionState.ERROR
-                self._error = str(e)
-                raise
-
-    def disconnect(self) -> None:
-        """Disconnect from the PLC."""
-        with self._lock:
-            try:
-                self._client.disconnect()
-            except Exception:
-                pass
-            self._state = ConnectionState.DISCONNECTED
-            self._error = ""
+    def _close(self) -> None:
+        self._client.disconnect()
 
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         """Read bytes from an S7 data source (DB210, EB, etc.)."""
@@ -148,9 +109,7 @@ class S7Connection(Connection):
                     size=size,
                 )
             except Exception as e:
-                log_error(f"S7 read failed for {source}: {e}")
-                self._state = ConnectionState.ERROR
-                self._error = str(e)
+                self._record_failure(f"S7 read failed for {source}", e)
                 raise
 
     def write_source(self, source: DataSource, offset: int, data: bytearray) -> None:
@@ -175,7 +134,5 @@ class S7Connection(Connection):
                 else:
                     raise ValueError(f"Unsupported S7 area: {area}")
             except Exception as e:
-                log_error(f"S7 write failed for {source}: {e}")
-                self._state = ConnectionState.ERROR
-                self._error = str(e)
+                self._record_failure(f"S7 write failed for {source}", e)
                 raise

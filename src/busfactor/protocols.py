@@ -6,10 +6,13 @@ must implement, along with shared types that are not protocol-specific.
 
 from __future__ import annotations
 
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+
+from .errors import log_error
 
 
 class ConnectionState(Enum):
@@ -111,32 +114,81 @@ class Connection(ABC):
 
     Every protocol (S7, EIP, …) implements this so that :class:`MonitorEngine`
     and frontends can drive it without knowing which wire protocol is in use.
+
+    The connection state machine lives here. A driver implements
+    :meth:`_open` and :meth:`_close` for its protocol; :meth:`connect` and
+    :meth:`disconnect` wrap them so every driver moves through the same
+    states, records a failure the same way and re-raises it. Reads and
+    writes stay with the driver, which knows what a failure means for its
+    link: an S7 read error is a lost connection, a Modbus one is a dropped
+    reply that the next poll retries.
     """
 
     protocol: str
 
-    @property
-    @abstractmethod
-    def state(self) -> ConnectionState:
-        ...
+    def __init__(self, config: ConnectionConfig) -> None:
+        self._config = config
+        self._state = ConnectionState.DISCONNECTED
+        self._error = ""
+        self._lock = threading.Lock()
 
     @property
-    @abstractmethod
-    def connected(self) -> bool:
-        ...
-
-    @property
-    @abstractmethod
     def config(self) -> ConnectionConfig:
-        ...
+        return self._config
 
-    @abstractmethod
+    @property
+    def state(self) -> ConnectionState:
+        return self._state
+
+    @property
+    def error(self) -> str:
+        """Why the state is ERROR; empty otherwise."""
+        return self._error
+
+    @property
+    def connected(self) -> bool:
+        return self._state == ConnectionState.CONNECTED
+
     def connect(self) -> None:
-        ...
+        """Open the link, or record why it could not be opened and re-raise."""
+        with self._lock:
+            self._state = ConnectionState.CONNECTING
+            self._error = ""
+            try:
+                self._open()
+            except Exception as e:
+                self._record_failure(
+                    f"{self.protocol} connection to {self._config.address}:{self._config.tcp_port} failed", e
+                )
+                self._close_quietly()
+                raise
+            self._state = ConnectionState.CONNECTED
+
+    def disconnect(self) -> None:
+        with self._lock:
+            self._close_quietly()
+            self._state = ConnectionState.DISCONNECTED
+            self._error = ""
+
+    def _record_failure(self, what: str, error: Exception) -> None:
+        """Log *error* and put the connection into the ERROR state."""
+        log_error(f"{what}: {error}")
+        self._state = ConnectionState.ERROR
+        self._error = str(error)
+
+    def _close_quietly(self) -> None:
+        try:
+            self._close()
+        except Exception:
+            pass
 
     @abstractmethod
-    def disconnect(self) -> None:
-        ...
+    def _open(self) -> None:
+        """Open the protocol link. Raise on failure; connect() records the state."""
+
+    @abstractmethod
+    def _close(self) -> None:
+        """Release the protocol link. Also called after a failed open, so it must cope with a half-open one."""
 
     @abstractmethod
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:

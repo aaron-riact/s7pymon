@@ -17,7 +17,7 @@ import click
 
 from .connection import parse_s7_source
 from .engine import MonitorEngine, ReadGroup, WriteMode
-from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
+from .protocols import Connection, ConnectionConfig, DataSource, ReadResult
 from .variable import S7Area, Variable
 from .web import S7WebServer
 
@@ -39,46 +39,22 @@ class DemoConnection(Connection):
     protocol = "demo"
 
     def __init__(self, *, tick_interval: float = 0.7, seed: int | None = None):
-        self._config = ConnectionConfig(address=DEMO_ADDRESS)
-        self._state = ConnectionState.DISCONNECTED
-        self._error = ""
+        super().__init__(ConnectionConfig(address=DEMO_ADDRESS))
         self._tick_interval = tick_interval
         self._rng = random.Random(seed)
         self._buffers: dict[tuple[S7Area, int], bytearray] = {(S7Area.DB, DEMO_DB): bytearray(16)}
-        self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="busfactor-demo", daemon=True)
         self._tick = 0
         with self._lock:
             self._advance_locked()
 
-    @property
-    def config(self) -> ConnectionConfig:
-        return self._config
+    def _open(self) -> None:
+        if not self._thread.is_alive():
+            self._thread.start()
 
-    @property
-    def state(self) -> ConnectionState:
-        return self._state
-
-    @property
-    def error(self) -> str:
-        return self._error
-
-    @property
-    def connected(self) -> bool:
-        return self._state == ConnectionState.CONNECTED
-
-    def connect(self) -> None:
-        with self._lock:
-            self._state = ConnectionState.CONNECTED
-            self._error = ""
-            if not self._thread.is_alive():
-                self._thread.start()
-
-    def disconnect(self) -> None:
-        with self._lock:
-            self._state = ConnectionState.DISCONNECTED
-            self._error = ""
+    def _close(self) -> None:
+        pass  # The ticker keeps running; close() stops it for good.
 
     def close(self) -> None:
         self._stop.set()

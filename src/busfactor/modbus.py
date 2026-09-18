@@ -21,12 +21,10 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
 import time
 from typing import Callable, TypeVar
 
-from .errors import log_error
-from .protocols import Connection, ConnectionConfig, ConnectionState, DataSource, ReadResult
+from .protocols import Connection, ConnectionConfig, DataSource, ReadResult
 
 log = logging.getLogger(__name__)
 
@@ -102,28 +100,9 @@ class ModbusConnection(Connection):
     protocol = "modbus"
 
     def __init__(self, config: ConnectionConfig, client_factory=None):
-        self._config = config
-        self._state = ConnectionState.DISCONNECTED
-        self._error: str = ""
-        self._lock = threading.Lock()
+        super().__init__(config)
         self._client = None
         self._client_factory = client_factory
-
-    @property
-    def state(self) -> ConnectionState:
-        return self._state
-
-    @property
-    def connected(self) -> bool:
-        return self._state == ConnectionState.CONNECTED
-
-    @property
-    def error(self) -> str:
-        return self._error
-
-    @property
-    def config(self) -> ConnectionConfig:
-        return self._config
 
     @property
     def status_extra(self) -> dict[str, str]:
@@ -154,42 +133,27 @@ class ModbusConnection(Connection):
             timeout=self._config.timeout_ms / 1000.0,
         )
 
-    def connect(self) -> None:
-        with self._lock:
-            self._state = ConnectionState.CONNECTING
-            self._error = ""
-            log.debug(
-                "Connecting to %s:%s framer=%s slave=%s ...",
-                self._config.address, self._config.tcp_port, self._config.framer, self._config.slave_id,
+    def _open(self) -> None:
+        log.debug(
+            "Connecting to %s:%s framer=%s slave=%s ...",
+            self._config.address, self._config.tcp_port, self._config.framer, self._config.slave_id,
+        )
+        try:
+            factory = self._client_factory or self._build_client
+            client = factory()
+        except ImportError:
+            raise ConnectionError("pymodbus library not available") from None
+        if not client.connect():
+            raise ConnectionError(
+                f"Could not open {self._config.address}:{self._config.tcp_port}"
             )
-            try:
-                factory = self._client_factory or self._build_client
-                client = factory()
-                if not client.connect():
-                    raise ConnectionError(
-                        f"Could not open {self._config.address}:{self._config.tcp_port}"
-                    )
-                self._client = client
-                self._state = ConnectionState.CONNECTED
-                log.debug("Connected OK")
-            except ImportError:
-                self._state = ConnectionState.ERROR
-                self._error = "pymodbus library not available"
-                raise ConnectionError("pymodbus library not available") from None
-            except Exception as e:
-                log_error(f"Modbus connection failed: {e}")
-                self._state = ConnectionState.ERROR
-                self._error = str(e)
-                self._cleanup()
-                raise
+        self._client = client
+        log.debug("Connected OK")
 
-    def disconnect(self) -> None:
+    def _close(self) -> None:
         log.debug("Disconnecting ...")
-        with self._lock:
-            self._cleanup()
-            self._state = ConnectionState.DISCONNECTED
-            self._error = ""
-            log.debug("Disconnected")
+        self._cleanup()
+        log.debug("Disconnected")
 
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         log.debug("read_source(%s, offset=%s, size=%s)", source, offset, size)

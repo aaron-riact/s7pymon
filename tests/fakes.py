@@ -14,18 +14,16 @@ class BaseFakeConnection(Connection):
     ``DataSource`` into an ``(area, db)`` tuple.
     """
 
+    protocol = "fake"
+
     def __init__(self, buffers: dict | None = None, *, address: str = "10.0.0.5"):
-        self._config = ConnectionConfig(address=address)
+        super().__init__(ConnectionConfig(address=address))
         self._state = ConnectionState.CONNECTED
         self._buffers: dict[Hashable, bytearray] = buffers or {}
         self.writes: list[tuple] = []
         self.connect_calls = 0
         self.disconnect_calls = 0
         self.read_error: Exception | None = None
-
-    @property
-    def config(self) -> ConnectionConfig:
-        return self._config
 
     @property
     def state(self) -> ConnectionState:
@@ -35,17 +33,11 @@ class BaseFakeConnection(Connection):
     def state(self, value: ConnectionState) -> None:
         self._state = value
 
-    @property
-    def connected(self) -> bool:
-        return self._state == ConnectionState.CONNECTED
-
-    def connect(self) -> None:
+    def _open(self) -> None:
         self.connect_calls += 1
-        self._state = ConnectionState.CONNECTED
 
-    def disconnect(self) -> None:
+    def _close(self) -> None:
         self.disconnect_calls += 1
-        self._state = ConnectionState.DISCONNECTED
 
     def read_source(self, source: DataSource, offset: int, size: int) -> ReadResult:
         if self.read_error is not None:
