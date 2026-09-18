@@ -42,7 +42,7 @@ from .eip import EIPConnection, build_eip_read_groups
 from .modbus import ModbusConnection
 from .errors import dump_errors
 from .engine import ReadGroup, WriteMode
-from .logging import LogFormat
+from .datalog import LogFormat
 from .protocols import Connection, ConnectionConfig, DataSource
 from .field_vars import expand_field_vars
 from .rules import FollowRule, OutputRule, PulseRule, RulesEngine, ToggleRule

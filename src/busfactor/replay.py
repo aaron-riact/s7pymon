@@ -16,7 +16,7 @@ from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header, Label, Static
 from textual.containers import Vertical
 
-from .logging import LogEntry, SessionMetadata, load_log_file
+from .datalog import LogEntry, SessionMetadata, load_log_file
 
 
 class SessionInfoDisplay(Static):

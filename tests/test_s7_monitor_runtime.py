@@ -11,7 +11,7 @@ from busfactor.cli import (
 from busfactor.config import S7MonitorConfig
 from busfactor.engine import WriteMode
 from busfactor.protocols import DataSource
-from busfactor.logging import LogFormat
+from busfactor.datalog import LogFormat
 from busfactor.variable import S7Area
 
 

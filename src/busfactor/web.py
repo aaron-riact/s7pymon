@@ -43,7 +43,7 @@ from .cli import RuntimeConfigError, load_merged_config, monitor_options, resolv
 from .config import S7MonitorConfig
 from .engine import MonitorEngine, WriteBlockedError, WriteMode
 from .errors import dump_errors, log_error
-from .logging import DataLogger, SessionMetadata
+from .datalog import DataLogger, SessionMetadata
 
 WEBUI_DIR = Path(__file__).parent / "webui"
 

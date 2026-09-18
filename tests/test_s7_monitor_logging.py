@@ -2,7 +2,7 @@ import json
 import pytest
 from pathlib import Path
 
-from busfactor.logging import (
+from busfactor.datalog import (
     CSV_FIELDS,
     DataLogger,
     LogEntry,

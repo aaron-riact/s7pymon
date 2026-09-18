@@ -1,7 +1,7 @@
 import pytest
 from click.testing import CliRunner
 
-from busfactor.logging import (
+from busfactor.datalog import (
     DataLogger,
     LogEntry,
     LogFormat,

@@ -22,7 +22,7 @@ from typing import Union
 
 from .errors import log_error
 from .protocols import Connection, ConnectionState, DataSource
-from .logging import DataLogger, LogEntry
+from .datalog import DataLogger, LogEntry
 from .rules import RulesEngine
 from .variable import DataType, Variable, encode_for_write, extract_value
 

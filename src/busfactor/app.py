@@ -34,7 +34,7 @@ from textual.widgets.data_table import ColumnKey, RowKey
 from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
 from .errors import log_error
-from .logging import DataLogger, LogEntry, LogFormat, SessionMetadata
+from .datalog import DataLogger, LogEntry, LogFormat, SessionMetadata
 from .modbus import format_row_address
 from .rules import RulesEngine
 from .variable import DataType, Variable, compute_read_range, encode_for_write, extract_value
