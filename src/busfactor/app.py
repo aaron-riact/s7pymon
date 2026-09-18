@@ -20,7 +20,6 @@ from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual import work
-from textual._files import generate_datetime_filename
 from textual.screen import Screen
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
@@ -30,7 +29,7 @@ from textual.geometry import Region, Size
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, RichLog, Static
-from textual.widgets._data_table import ColumnKey, RowKey
+from textual.widgets.data_table import ColumnKey, RowKey
 
 from .protocols import Connection, ConnectionState, DataSource
 from .engine import ReadGroup, WriteMode, format_hex_dump
@@ -1387,7 +1386,7 @@ class S7MonitorApp(App):
         )
         console.print(screen_render)
         text = console.export_text(styles=False)
-        filename = generate_datetime_filename("busfactor", ".txt")
+        filename = datetime.now().strftime("busfactor_%Y-%m-%d_%H-%M-%S.txt")
         with open(filename, "w", encoding="utf-8") as f:
             f.write(text)
         log = self.query_one("#log-panel", RichLog)

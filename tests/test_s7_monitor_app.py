@@ -159,7 +159,7 @@ class TestHexSelection:
                 app._current_data = {"DB1": (bytearray([0xAA, 0xBB, 0xCC, 0xDD]), 0)}
                 row_key = app._row_keys.get(id(app._variables[0]))
                 # Simulate row highlight
-                from textual.widgets._data_table import RowKey
+                from textual.widgets.data_table import RowKey
                 app.on_data_table_row_highlighted(
                     DataTable.RowHighlighted(table, cursor_row=0, row_key=RowKey(row_key))
                 )
