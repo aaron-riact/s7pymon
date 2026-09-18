@@ -12,7 +12,7 @@ dependencies = [
     "python-snap7>=2.0",
     "pyyaml>=6.0",
     "textual>=3.0",
-    "ethernetip2",
+    "ethernetip",
     "pymodbus",
 ]
 
@@ -39,7 +39,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.uv.sources]
-ethernetip2 = { path = "../ethernetip-stuff/python-ethernetip", editable = true }
+ethernetip = { path = "../ethernetip-stuff/python-ethernetip", editable = true }
 
 [tool.ty]
 environment.root = ["."]
