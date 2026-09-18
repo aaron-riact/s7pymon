@@ -171,6 +171,43 @@ class ResolvedRuntime:
     rules_engine: RulesEngine | None = None
 
 
+def build_connection(cfg: S7MonitorConfig, protocol: str, address: str) -> Connection:
+    """The driver for *protocol*, configured from *cfg* with that protocol's defaults."""
+    timeout_ms = cfg.timeout if cfg.timeout is not None else 3000
+    if protocol == "eip":
+        return EIPConnection(ConnectionConfig(
+            address=address,
+            tcp_port=cfg.port if cfg.port is not None else 44818,
+            timeout_ms=timeout_ms,
+            protocol="eip",
+            eip_port=cfg.eip_port if cfg.eip_port is not None else 44818,
+            input_assembly=cfg.input_assembly if cfg.input_assembly is not None else 101,
+            output_assembly=cfg.output_assembly if cfg.output_assembly is not None else 100,
+            config_assembly=cfg.config_assembly if cfg.config_assembly is not None else 102,
+            input_size=cfg.input_size if cfg.input_size is not None else 32,
+            output_size=cfg.output_size if cfg.output_size is not None else 32,
+            rpi_ms=cfg.rpi_ms if cfg.rpi_ms is not None else 50,
+        ))
+    if protocol == "modbus":
+        return ModbusConnection(ConnectionConfig(
+            address=address,
+            # 502 is the registered Modbus port; serial gateways use their own.
+            tcp_port=cfg.port if cfg.port is not None else 502,
+            timeout_ms=timeout_ms,
+            protocol="modbus",
+            slave_id=cfg.slave_id if cfg.slave_id is not None else 1,
+            framer=cfg.framer or "socket",
+            retries=cfg.retries if cfg.retries is not None else 3,
+        ))
+    return S7Connection(ConnectionConfig(
+        address=address,
+        rack=cfg.rack if cfg.rack is not None else 0,
+        slot=cfg.slot if cfg.slot is not None else 2,
+        tcp_port=cfg.port if cfg.port is not None else 102,
+        timeout_ms=timeout_ms,
+    ))
+
+
 def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
     """Resolve a merged config into a :class:`ResolvedRuntime`.
 
@@ -187,42 +224,7 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
     write_mode = WriteMode(cfg.write_mode.lower()) if cfg.write_mode else WriteMode.DISABLED
     log_format = LogFormat(cfg.log_format.lower()) if cfg.log_format else LogFormat.CSV
 
-    if protocol == "eip":
-        conn_config = ConnectionConfig(
-            address=final_address,
-            tcp_port=cfg.port if cfg.port is not None else 44818,
-            timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
-            protocol="eip",
-            eip_port=cfg.eip_port if cfg.eip_port is not None else 44818,
-            input_assembly=cfg.input_assembly if cfg.input_assembly is not None else 101,
-            output_assembly=cfg.output_assembly if cfg.output_assembly is not None else 100,
-            config_assembly=cfg.config_assembly if cfg.config_assembly is not None else 102,
-            input_size=cfg.input_size if cfg.input_size is not None else 32,
-            output_size=cfg.output_size if cfg.output_size is not None else 32,
-            rpi_ms=cfg.rpi_ms if cfg.rpi_ms is not None else 50,
-        )
-        connection: Connection = EIPConnection(conn_config)
-    elif protocol == "modbus":
-        conn_config = ConnectionConfig(
-            address=final_address,
-            # 502 is the registered Modbus port; serial gateways use their own.
-            tcp_port=cfg.port if cfg.port is not None else 502,
-            timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
-            protocol="modbus",
-            slave_id=cfg.slave_id if cfg.slave_id is not None else 1,
-            framer=cfg.framer or "socket",
-            retries=cfg.retries if cfg.retries is not None else 3,
-        )
-        connection = ModbusConnection(conn_config)
-    else:
-        conn_config = ConnectionConfig(
-            address=final_address,
-            rack=cfg.rack if cfg.rack is not None else 0,
-            slot=cfg.slot if cfg.slot is not None else 2,
-            tcp_port=cfg.port if cfg.port is not None else 102,
-            timeout_ms=cfg.timeout if cfg.timeout is not None else 3000,
-        )
-        connection = S7Connection(conn_config)
+    connection = build_connection(cfg, protocol, final_address)
 
     if cfg.variables or cfg.field_vars:
         parsed_vars: list[Variable] = []
@@ -248,7 +250,7 @@ def resolve_runtime(cfg: S7MonitorConfig) -> ResolvedRuntime:
                 )
 
         if protocol == "eip":
-            read_groups = build_eip_read_groups(conn_config)
+            read_groups = build_eip_read_groups(connection.config)
         else:
             read_groups = build_read_groups(parsed_vars)
 
