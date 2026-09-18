@@ -24,7 +24,7 @@
 protocol: modbus
 address: 192.168.0.119
 port: 60000
-slave_id: 65
+slave_id: 66
 framer: rtu
 retries: 3
 interval: 0.2
@@ -36,8 +36,13 @@ field_vars:
     register_width_bits: 16
     fields:
       - 256:
-          # Only the low four bits are used. The plugin polls bit 0 after a
-          # move and waits for it to clear, 50ms apart, 15s timeout.
+          # The raw word first, so a bit no source names is still visible as a
+          # number that does not match the four decoded below. A 3FG has no
+          # safety switches, so it has no equivalent of the RG's safety error
+          # bit; calibration ok going to 0 is the fault to watch.
+          - Word0:status word raw
+          # The plugin polls bit 0 after a move and waits for it to clear,
+          # 50ms apart, with a 15s timeout.
           - Word0.0:busy
           - Word0.1:grip detected
           - Word0.2:force grip detected

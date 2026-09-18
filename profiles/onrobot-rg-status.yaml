@@ -21,7 +21,7 @@
 protocol: modbus
 address: 192.168.0.119
 port: 60000
-slave_id: 65
+slave_id: 67
 framer: rtu
 interval: 0.2
 write_mode: disabled

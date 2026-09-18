@@ -119,6 +119,14 @@ class TestOnRobot3FG15StatusProfile:
         assert labels >= {"busy", "grip detected", "force grip detected",
                           "calibration ok"}
 
+    def test_the_raw_status_word_is_shown_alongside_the_bits(self):
+        # Bits above 3 are not named by any source we have. Showing the whole
+        # word means an unexpected one is still visible.
+        variables = load("onrobot-3fg15-status.yaml").variables
+        raw = [v for v in variables if v.register == 256 and v.extra is None]
+        assert len(raw) == 1
+        assert raw[0].decode(bytearray([0x00, 0x88])) == 0x0088
+
     def test_finger_setup_registers_are_included(self):
         variables = modbus_variables("onrobot-3fg15-status.yaml")
         by_register = {v.register: v.label or "" for v in variables}
