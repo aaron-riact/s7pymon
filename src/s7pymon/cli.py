@@ -128,7 +128,10 @@ def build_rules_engine(rules_cfg: dict[str, dict[str, Any]]) -> RulesEngine | No
                 f"Unknown rule type for {target!r}: expected 'follow', 'toggle', "
                 f"or 'pulse', got keys {list(rule_def.keys())}"
             )
-    return RulesEngine(rules)
+    try:
+        return RulesEngine(rules)
+    except ValueError as e:
+        raise RuntimeConfigError(f"Invalid rule target: {e}") from e
 
 
 @dataclass

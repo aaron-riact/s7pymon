@@ -38,48 +38,59 @@ class PulseRule(OutputRule):
     duration: int = 1
 
 
-_RuleKey = int
+@dataclass
+class _RuleState:
+    """What the engine remembers about one rule between poll cycles.
+
+    The rules themselves are frozen config, so the target is parsed once
+    here and the counters live beside it instead of in dicts keyed by the
+    rule object.
+    """
+
+    rule: OutputRule
+    target: Variable
+    counter: int = 0  # toggle: cycles since the last flip
+    toggle_on: bool = False
+    pulse_remaining: int = 0
 
 
 class RulesEngine:
     def __init__(self, rules: list[OutputRule]):
-        self._rules = rules
-        self._counters: dict[_RuleKey, int] = {}
-        self._toggle_state: dict[_RuleKey, bool] = {}
-        self._pulse_remaining: dict[_RuleKey, int] = {}
+        self._states = [_RuleState(rule, Variable.parse(rule.target)) for rule in rules]
 
     @property
     def rules(self) -> list[OutputRule]:
-        return list(self._rules)
+        return [state.rule for state in self._states]
 
     def trigger_pulse(self, target: str) -> None:
-        for rule in self._rules:
-            if isinstance(rule, PulseRule) and rule.target == target:
-                self._pulse_remaining[id(rule)] = rule.duration
+        for state in self._states:
+            if isinstance(state.rule, PulseRule) and state.rule.target == target:
+                state.pulse_remaining = state.rule.duration
                 return
         raise KeyError(f"No pulse rule for {target!r}")
 
     def apply(
         self, connection: Connection, current_values: dict[str, str]
     ) -> None:
-        for rule in self._rules:
+        for state in self._states:
+            rule = state.rule
             if isinstance(rule, FollowRule):
-                self._apply_follow(rule, connection, current_values)
+                self._apply_follow(rule, state.target, connection, current_values)
             elif isinstance(rule, ToggleRule):
-                self._apply_toggle(rule, connection)
+                self._apply_toggle(rule, state, connection)
             elif isinstance(rule, PulseRule):
-                self._apply_pulse(rule, connection)
+                self._apply_pulse(state, connection)
 
     def _apply_follow(
         self,
         rule: FollowRule,
+        target_var: Variable,
         connection: Connection,
         current_values: dict[str, str],
     ) -> None:
         formatted = current_values.get(rule.source)
         if formatted is None:
             return
-        target_var = Variable.parse(rule.target)
         parsed = target_var.parse_input(formatted)
         if target_var.type == DataType.BIT:
             if not isinstance(parsed, bool):
@@ -92,20 +103,15 @@ class RulesEngine:
             encoded = target_var.encode(parsed)
         connection.write_source(target_var.source, target_var.offset, encoded)
 
-    def _apply_toggle(self, rule: ToggleRule, connection: Connection) -> None:
-        key = id(rule)
-        counter = self._counters.get(key, 0) + 1
-        target_var = Variable.parse(rule.target)
+    def _apply_toggle(self, rule: ToggleRule, state: _RuleState, connection: Connection) -> None:
+        state.counter += 1
+        if state.counter < rule.period:
+            return
+        state.counter = 0
+        state.toggle_on = not state.toggle_on
+        self._write_bit_state(connection, state.target, state.toggle_on)
 
-        if counter >= rule.period:
-            self._counters[key] = 0
-            state = self._toggle_state.get(key, False)
-            self._toggle_state[key] = not state
-            self._write_toggle_state(connection, target_var, not state)
-        else:
-            self._counters[key] = counter
-
-    def _write_toggle_state(
+    def _write_bit_state(
         self,
         connection: Connection,
         var: Variable,
@@ -118,13 +124,9 @@ class RulesEngine:
             encoded = var.encode(1 if state else 0)
         connection.write_source(var.source, var.offset, encoded)
 
-    def _apply_pulse(self, rule: PulseRule, connection: Connection) -> None:
-        key = id(rule)
-        remaining = self._pulse_remaining.get(key, 0)
-        target_var = Variable.parse(rule.target)
-
-        if remaining > 0:
-            self._pulse_remaining[key] = remaining - 1
-            self._write_toggle_state(connection, target_var, True)
+    def _apply_pulse(self, state: _RuleState, connection: Connection) -> None:
+        if state.pulse_remaining > 0:
+            state.pulse_remaining -= 1
+            self._write_bit_state(connection, state.target, True)
         else:
-            self._write_toggle_state(connection, target_var, False)
+            self._write_bit_state(connection, state.target, False)

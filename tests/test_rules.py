@@ -218,7 +218,7 @@ class TestRulesEngine:
         assert ("EIP.Output", 0, bytearray(b"\xAB")) not in conn.writes
 
     def test_rules_property(self):
-        rules = [FollowRule(target="t", source="s")]
+        rules = [FollowRule(target="DB1.Byte0", source="DB1.Byte1")]
         engine = RulesEngine(rules)
         assert engine.rules == rules
         assert engine.rules is not rules  # defensive copy
