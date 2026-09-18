@@ -184,14 +184,21 @@ register map it expects.
 |---------|--------|
 | `profiles/onrobot-rg-status.yaml` | OnRobot RG2 / RG6 — width and status bits, read only |
 | `profiles/onrobot-rg-command.yaml` | OnRobot RG2 / RG6 — force, width and control, writable |
+| `profiles/onrobot-3fg15-status.yaml` | OnRobot 3FG15 — diameter and status bits, read only |
+| `profiles/onrobot-3fg15-command.yaml` | OnRobot 3FG15 — force, diameter, grip type and control, writable |
 
 ```bash
 busfactor -c profiles/onrobot-rg-status.yaml
 ```
 
-The RG profiles are split because busfactor reads one contiguous window per
-table, and the gripper does not implement registers 3..257. Commands sit at
-0..2 and status at 267..275, so one window cannot hold both.
+Each gripper is split into a status and a command profile, because busfactor
+reads one contiguous window per table and the command and status blocks are
+far apart with nothing readable in between. The RG has commands at 0..2 and
+status at 267..275; the 3FG15 has commands at 0..3 and status at 256..258.
+
+All four use the same bus settings. Slave 65 is the flange tool address, not
+the gripper model, so it does not change when you swap one gripper for
+another.
 
 ### Config files
 

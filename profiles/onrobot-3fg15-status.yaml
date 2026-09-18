@@ -1,0 +1,55 @@
+# OnRobot 3FG15 -- status, read only.
+#
+# Same bus as the RG profiles: a gripper on a Dobot flange, reached through
+# the controller's serial gateway on port 60000, RTU frames, slave 65. The
+# slave id is the flange tool address, not the gripper model, so it does not
+# change when you swap an RG for a 3FG15.
+#
+# The flange UART must already be at 1000000 baud, even parity, 1 stop bit.
+# On a Dobot that is SetTool485(1000000,E,1), and it does not survive a
+# reboot.
+#
+# Register numbers are OnRobot's own. Values below were read off a real
+# 3FG15 on 2026-09-18.
+#
+# The window is registers 256..258. OnRobot's own plugin reads exactly this
+# block, and nothing between 259 and 512 answers reliably.
+
+protocol: modbus
+address: 192.168.0.119
+port: 60000
+slave_id: 65
+framer: rtu
+retries: 3
+interval: 0.2
+write_mode: disabled
+
+field_vars:
+  MB.Holding:
+    base_register: 0
+    register_width_bits: 16
+    fields:
+      - 256:
+          # Only the low four bits are used. Bit 0 is the one the plugin
+          # polls after a move; it waits for it to clear.
+          - Word0.0:busy
+          - Word0.1:grip detected
+          - Word0.2:force grip detected
+          - Word0.3:calibration ok
+      - 257:
+          - Word0:raw diameter 0.1mm
+      - 258:
+          # Signed: the fingertip offset can push this below zero.
+          - Int0:diameter 0.1mm
+
+# Everything below sits outside the window above and needs its own profile,
+# because busfactor reads one contiguous block per table.
+#
+# Finger setup, registers 270..273:
+#   270  finger length 0.1mm          read 490 = 49.0 mm
+#   272  finger position 1,2,3        read 2 = medium
+#   273  fingertip offset 0.01mm      read 500 = 5.00 mm
+#
+# Diameter limits for the current finger setup, registers 513..514:
+#   513  minimum diameter 0.1mm       read 290 = 29.0 mm
+#   514  maximum diameter 0.1mm       read 1490 = 149.0 mm

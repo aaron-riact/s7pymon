@@ -1,0 +1,44 @@
+# OnRobot 3FG15 -- command registers, writable.
+#
+# Separate from the status profile because busfactor reads one contiguous
+# window per table. Commands are at 0..3, status at 256..258.
+#
+# A move is four registers written together, control last:
+#
+#   0  target force N          limits depend on finger position
+#   1  target diameter 0.1mm   inside the limits at registers 513..514,
+#                              read 29.0 to 149.0 mm on this gripper
+#   2  grip type               0 external, 1 internal
+#   3  control                 1 grip, 2 move, 4 stop, 5 flex
+#
+# Diameter is the workpiece diameter, not a finger opening. External grip
+# closes onto the outside of a part, internal grip opens into a bore.
+#
+# The gripper moves when the control register is written. Keep hands clear.
+# write_mode is confirm, so the frontend asks first.
+#
+# Watch register 256 bit 0 in the status profile to know when a move has
+# finished; OnRobot's plugin polls it every 50ms with a 15s timeout.
+
+protocol: modbus
+address: 192.168.0.119
+port: 60000
+slave_id: 65
+framer: rtu
+retries: 3
+interval: 0.5
+write_mode: confirm
+
+field_vars:
+  MB.Holding:
+    base_register: 0
+    register_width_bits: 16
+    fields:
+      - 0:
+          - Word0:target force N
+      - 1:
+          - Word0:target diameter 0.1mm
+      - 2:
+          - Word0:grip type - 0 external, 1 internal
+      - 3:
+          - Word0:control - 1 grip, 2 move, 4 stop, 5 flex

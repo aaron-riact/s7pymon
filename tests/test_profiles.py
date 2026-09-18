@@ -91,3 +91,58 @@ class TestOnRobotCommandProfile:
     def test_command_registers_are_in_order(self):
         variables = modbus_variables("onrobot-rg-command.yaml")
         assert [v.register for v in variables] == [0, 1, 2]
+
+
+class TestOnRobot3FG15StatusProfile:
+    def test_shares_the_flange_bus_settings_with_the_rg(self):
+        three = load("onrobot-3fg15-status.yaml").connection.config
+        rg = load("onrobot-rg-status.yaml").connection.config
+        # The slave id is the flange tool address, not the gripper model.
+        assert (three.tcp_port, three.slave_id, three.framer) == (
+            rg.tcp_port, rg.slave_id, rg.framer)
+
+    def test_is_read_only(self):
+        assert load("onrobot-3fg15-status.yaml").write_mode == WriteMode.DISABLED
+
+    def test_window_is_the_block_the_plugin_reads(self):
+        group = load("onrobot-3fg15-status.yaml").read_groups[0]
+        # Registers 256..258, as bytes.
+        assert group.start == 512
+        assert group.size == 6
+
+    def test_status_bits_are_named(self):
+        labels = {v.label for v in load("onrobot-3fg15-status.yaml").variables}
+        assert labels >= {"busy", "grip detected", "force grip detected",
+                          "calibration ok"}
+
+    def test_busy_is_bit_0_of_register_256(self):
+        variables = modbus_variables("onrobot-3fg15-status.yaml")
+        busy = next(v for v in variables if v.label == "busy")
+        assert busy.register == 256
+        assert busy.extra == 0
+
+    def test_diameter_is_signed(self):
+        variables = modbus_variables("onrobot-3fg15-status.yaml")
+        diameter = next(v for v in variables if v.label == "diameter 0.1mm")
+        assert diameter.register == 258
+        # The fingertip offset can drive it below zero.
+        assert diameter.decode(bytearray([0xFF, 0xFF])) == -1
+
+    def test_raw_diameter_is_unsigned(self):
+        variables = modbus_variables("onrobot-3fg15-status.yaml")
+        raw = next(v for v in variables if v.label == "raw diameter 0.1mm")
+        assert raw.decode(bytearray([0x02, 0x46])) == 582
+
+
+class TestOnRobot3FG15CommandProfile:
+    def test_writes_need_confirmation(self):
+        assert load("onrobot-3fg15-command.yaml").write_mode == WriteMode.CONFIRM
+
+    def test_covers_the_four_command_registers(self):
+        group = load("onrobot-3fg15-command.yaml").read_groups[0]
+        assert group.start == 0
+        assert group.size == 8
+
+    def test_command_registers_are_in_order(self):
+        variables = modbus_variables("onrobot-3fg15-command.yaml")
+        assert [v.register for v in variables] == [0, 1, 2, 3]
