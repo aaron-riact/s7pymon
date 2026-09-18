@@ -12,13 +12,11 @@ import math
 import random
 import struct
 import threading
-from typing import cast
 
 import click
 
-from .connection import S7Connection
 from .engine import MonitorEngine, ReadGroup, WriteMode
-from .protocols import ConnectionConfig, ConnectionState, ReadResult
+from .protocols import Connection, ConnectionConfig, ConnectionState, ReadResult
 from .variable import S7Area, S7Variable
 from .web import S7WebServer
 
@@ -34,11 +32,13 @@ DEMO_VARIABLES = (
 )
 
 
-class DemoConnection:
+class DemoConnection(Connection):
     """A tiny in-memory PLC that produces changing data for the dashboard."""
 
+    protocol = "demo"
+
     def __init__(self, *, tick_interval: float = 0.7, seed: int | None = None):
-        self.config = ConnectionConfig(address=DEMO_ADDRESS)
+        self._config = ConnectionConfig(address=DEMO_ADDRESS)
         self._state = ConnectionState.DISCONNECTED
         self._error = ""
         self._tick_interval = tick_interval
@@ -50,6 +50,10 @@ class DemoConnection:
         self._tick = 0
         with self._lock:
             self._advance_locked()
+
+    @property
+    def config(self) -> ConnectionConfig:
+        return self._config
 
     @property
     def state(self) -> ConnectionState:
@@ -153,7 +157,7 @@ def build_demo_engine(
     connection = DemoConnection(tick_interval=poll_interval, seed=seed)
     variables = [S7Variable.parse(spec, label=label) for spec, label in DEMO_VARIABLES]
     engine = MonitorEngine(
-        connection=cast("S7Connection", connection),
+        connection=connection,
         variables=variables,
         read_groups=[ReadGroup(area=S7Area.DB, db=DEMO_DB, start=0, size=16)],
         poll_interval=poll_interval,
