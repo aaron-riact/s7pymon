@@ -41,6 +41,13 @@ T = TypeVar("T")
 
 # Modbus caps one request's payload. A read reply carries a single byte count,
 # and a write request carries its own, so writes fit two fewer registers.
+#
+# A gateway may cap it lower than the protocol does, and truncate rather than
+# refuse: the Dobot flange bus on port 60000 cuts every reply at 32 bytes after
+# the 2026-09 controller firmware, so a read of 14 registers or more comes back
+# short and the RTU framer never completes a frame. That reads as a dead device,
+# not as an oversized request. `max_registers_per_read` on the connection config
+# lowers the limit per gateway; 13 registers is the most that fits 32 bytes.
 MAX_REGISTERS_PER_READ = 125
 MAX_REGISTERS_PER_WRITE = 123
 MAX_BITS_PER_READ = 2000
@@ -233,7 +240,7 @@ class ModbusConnection(Connection):
         last = (offset + size - 1) // 2
         count = last - first + 1
         raw = bytearray()
-        for start, chunk in _chunks(first, count, MAX_REGISTERS_PER_READ):
+        for start, chunk in _chunks(first, count, self._registers_per_read):
             reader = (
                 self._client_read_holding if table == "holding" else self._client_read_input
             )
@@ -278,6 +285,19 @@ class ModbusConnection(Connection):
             self._client_write_coils(start, bits[start - first:start - first + chunk])
 
     # --------------------------------------------------------- client calls
+
+    @property
+    def _registers_per_read(self) -> int:
+        """Registers to ask for in one request.
+
+        Clamped to the protocol maximum so a config cannot ask for a reply
+        that no Modbus device could send, and to at least one so a zero or a
+        negative value cannot make ``_chunks`` loop forever.
+        """
+        limit = self._config.max_registers_per_read
+        if limit is None:
+            return MAX_REGISTERS_PER_READ
+        return max(1, min(limit, MAX_REGISTERS_PER_READ))
 
     def _require_client(self):
         if not self.connected or self._client is None:

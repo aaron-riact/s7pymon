@@ -198,6 +198,8 @@ def build_connection(cfg: S7MonitorConfig, protocol: str, address: str) -> Conne
             slave_id=cfg.slave_id if cfg.slave_id is not None else 1,
             framer=cfg.framer or "socket",
             retries=cfg.retries if cfg.retries is not None else 3,
+            # None leaves the protocol maximum in force.
+            max_registers_per_read=cfg.max_registers_per_read,
         ))
     if protocol == "s7":
         return S7Connection(ConnectionConfig(

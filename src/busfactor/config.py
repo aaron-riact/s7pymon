@@ -98,6 +98,7 @@ class S7MonitorConfig:
     slave_id: int | None = None
     framer: str | None = None
     retries: int | None = None
+    max_registers_per_read: int | None = None
     # Output rules (dict of target -> rule config)
     rules: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Field variable expansions (register-map dissection)
@@ -148,6 +149,7 @@ class S7MonitorConfig:
             slave_id=raw.get("slave_id"),
             framer=raw.get("framer"),
             retries=raw.get("retries"),
+            max_registers_per_read=raw.get("max_registers_per_read"),
             rules=raw.get("rules", {}),
             field_vars=raw.get("field_vars", {}),
             verbose=raw.get("verbose", False),

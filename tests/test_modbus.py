@@ -250,6 +250,35 @@ class TestReadRegisters:
             ("read_holding", MAX_REGISTERS_PER_READ, 5),
         ]
 
+    def test_a_configured_limit_splits_the_read_further(self):
+        conn, client = make_connection(max_registers_per_read=13)
+        conn.connect()
+        conn.read_source(HOLDING, 512, 40)
+        assert [(c[0], c[1], c[2]) for c in client.calls] == [
+            ("read_holding", 256, 13),
+            ("read_holding", 269, 7),
+        ]
+
+    def test_a_configured_limit_keeps_the_data_contiguous(self):
+        conn, _ = make_connection(max_registers_per_read=13)
+        conn.connect()
+        result = conn.read_source(HOLDING, 0, 40)
+        # FakeClient defaults register n to n+1.
+        expected = registers_to_bytes([n + 1 for n in range(20)])
+        assert bytes(result.data) == bytes(expected)
+
+    def test_a_limit_above_the_protocol_maximum_is_clamped(self):
+        conn, client = make_connection(max_registers_per_read=500)
+        conn.connect()
+        conn.read_source(HOLDING, 0, (MAX_REGISTERS_PER_READ + 1) * 2)
+        assert [c[2] for c in client.calls] == [MAX_REGISTERS_PER_READ, 1]
+
+    def test_a_limit_below_one_still_makes_progress(self):
+        conn, client = make_connection(max_registers_per_read=0)
+        conn.connect()
+        conn.read_source(HOLDING, 0, 4)
+        assert [c[2] for c in client.calls] == [1, 1]
+
     def test_split_read_data_is_contiguous(self):
         conn, _ = make_connection()
         conn.connect()

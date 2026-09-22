@@ -43,6 +43,9 @@ class ConnectionConfig:
     slave_id: int = 1
     framer: str = "socket"  # "socket" = Modbus TCP, "rtu" = RTU frames over TCP
     retries: int = 3
+    # Registers per read request. None means the protocol maximum. Lower it for
+    # a gateway that truncates its replies -- see MAX_REGISTERS_PER_READ.
+    max_registers_per_read: int | None = None
 
     @property
     def display(self) -> str:
