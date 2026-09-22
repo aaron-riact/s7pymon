@@ -9,6 +9,13 @@
 # On a Dobot that is SetTool485(1000000,E,1), and it does not survive a
 # reboot.
 #
+# The flange gateway truncates any reply longer than 32 bytes, so a read of
+# more than 13 registers comes back short and the RTU framer never completes a
+# frame -- which looks like a dead gripper, not an oversized request. Measured
+# 2026-09-22: 13 registers 20/20 complete, 14 and above 0/20, always cut to
+# exactly 32 bytes. The 2026-09 controller firmware introduced this; a
+# 25-register read was clean on 2026-09-18.
+#
 # ONE CLIENT AT A TIME. The gateway does not arbitrate between TCP clients.
 # Two of them put frames on the same serial bus and each can pick up the
 # other's replies, which reads as dropped and shifted registers rather than
@@ -19,13 +26,15 @@
 # riact's tfg driver and OnRobot's own Dobot plugin. Values in the comments
 # were read off a real 3FG15 on 2026-09-18.
 #
-# The window is registers 256..275, which read 20/20 clean on the bench.
+# The window is registers 256..275. That is 20 registers, so it now goes out
+# as two requests -- see the 32-byte reply cap above.
 
 protocol: modbus
 address: 192.168.0.119
 port: 60000
-slave_id: 66
+slave_id: 65
 framer: rtu
+max_registers_per_read: 13
 retries: 3
 interval: 0.2
 write_mode: disabled

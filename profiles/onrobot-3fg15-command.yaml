@@ -33,6 +33,7 @@ address: 192.168.0.119
 port: 60000
 slave_id: 66
 framer: rtu
+max_registers_per_read: 13
 retries: 3
 interval: 0.5
 write_mode: confirm
